@@ -16,12 +16,23 @@ export default function Sidebar(): React.ReactNode {
         display: 'flex', flexDirection: 'column', minHeight: 0, background: 'var(--paper)'
       }}
     >
-      {/* zone de drag sous les feux macOS */}
-      <div className="drag" style={{ height: 52, borderBottom: 'var(--line-thick)', display: 'flex', alignItems: 'flex-end', padding: '0 16px 6px' }}>
-        <span style={{ font: '700 20px var(--grotesk)', letterSpacing: '-0.02em' }}>
+      {/* rangée de marque : les feux macOS (natifs, ~x 18-82) ouvrent la ligne,
+          le wordmark les prolonge — même grille que la barre du haut */}
+      <div
+        className="drag"
+        style={{
+          height: 52,
+          borderBottom: 'var(--line-thick)',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+          padding: '0 14px 0 92px'
+        }}
+      >
+        <span style={{ font: '700 20px/1 var(--grotesk)', letterSpacing: '-0.02em', whiteSpace: 'nowrap' }}>
           2<span style={{ color: 'var(--accent)' }}>Listen</span>
         </span>
-        <span className="mono" style={{ fontSize: 8, color: 'var(--ink-soft)', marginLeft: 8, marginBottom: 3 }}>
+        <span className="mono" style={{ fontSize: 8, color: 'var(--ink-soft)', marginTop: 5 }}>
           v{version || '0.0.0'}
         </span>
       </div>

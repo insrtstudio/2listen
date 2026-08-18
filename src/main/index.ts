@@ -29,7 +29,7 @@ function createWindow(): void {
     title: '2Listen',
     backgroundColor: '#ece9e2',
     titleBarStyle: 'hiddenInset',
-    trafficLightPosition: { x: 18, y: 21 },
+    trafficLightPosition: { x: 18, y: 19 },
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: false,
