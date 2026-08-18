@@ -8,13 +8,20 @@ export const BUCKETS = 2048
 const memory = new Map<string, Peaks>()
 const pending = new Map<string, Promise<Peaks | null>>()
 
+/** 6 plans : min, max, low, mid, high, trans. */
+export const PLANES = 6
+
 function unpack(buckets: number, buf: ArrayBuffer): Peaks {
   const u8 = new Uint8Array(buf)
+  const plane = (i: number): Uint8Array => u8.slice(buckets * i, buckets * (i + 1))
   return {
     buckets,
-    min: u8.slice(0, buckets),
-    max: u8.slice(buckets, buckets * 2),
-    rms: u8.slice(buckets * 2, buckets * 3)
+    min: plane(0),
+    max: plane(1),
+    low: plane(2),
+    mid: plane(3),
+    high: plane(4),
+    trans: plane(5)
   }
 }
 
@@ -48,7 +55,7 @@ async function compute(id: string, audioUrl: string): Promise<Peaks | null> {
       resolvePeaks(null)
     }
     worker.postMessage(
-      { id, buckets: BUCKETS, channels },
+      { id, buckets: BUCKETS, sampleRate: decoded.sampleRate, channels },
       channels.map((c) => c.buffer)
     )
   })
@@ -63,7 +70,8 @@ export function getPeaks(id: string, audioUrl: string): Promise<Peaks | null> {
 
   const job = (async () => {
     const disk = await window.tl.peaks.read(id)
-    if (disk && disk.byteLength === BUCKETS * 3) {
+    // l'ancien cache 3 plans (v1) a une taille différente : il est recalculé
+    if (disk && disk.byteLength === BUCKETS * PLANES) {
       const peaks = unpack(BUCKETS, disk)
       memory.set(id, peaks)
       return peaks

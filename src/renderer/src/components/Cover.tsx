@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 
 const urlCache = new Map<string, string>()
 
-export default function Cover({ coverKey, size, alt }: { coverKey: string | null; size: number; alt: string }): React.ReactNode {
+export default function Cover({ coverKey, size, alt, flush }: { coverKey: string | null; size: number; alt: string; flush?: boolean }): React.ReactNode {
   const [src, setSrc] = useState<string | null>(coverKey ? urlCache.get(coverKey) ?? null : null)
 
   useEffect(() => {
@@ -29,7 +29,7 @@ export default function Cover({ coverKey, size, alt }: { coverKey: string | null
     return (
       <div
         className="noart"
-        style={{ width: size, height: size, flex: 'none', border: 'var(--line)', fontSize: Math.max(14, size / 4) }}
+        style={{ width: size, height: size, flex: 'none', border: flush ? 'none' : 'var(--line)', fontSize: Math.max(14, size / 4) }}
         aria-hidden
       >
         ♪
@@ -43,7 +43,7 @@ export default function Cover({ coverKey, size, alt }: { coverKey: string | null
       width={size}
       height={size}
       loading="lazy"
-      style={{ width: size, height: size, objectFit: 'cover', flex: 'none', border: 'var(--line)' }}
+      style={{ width: size, height: size, objectFit: 'cover', flex: 'none', border: flush ? 'none' : 'var(--line)', display: 'block' }}
     />
   )
 }

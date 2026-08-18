@@ -2,6 +2,21 @@ import { useEffect, useRef, useState } from 'react'
 import type { Peaks, Track } from '@shared/types'
 import { fmtDuration } from '@/lib/format'
 import { getPeaks } from '@/lib/peaks'
+
+const rgbCache = new Map<string, [number, number, number]>()
+function hexToRgb(hex: string): [number, number, number] {
+  const cached = rgbCache.get(hex)
+  if (cached) return cached
+  let h = hex.replace('#', '')
+  if (h.length === 3) h = h.split('').map((c) => c + c).join('')
+  const v: [number, number, number] = [
+    parseInt(h.slice(0, 2), 16) || 0,
+    parseInt(h.slice(2, 4), 16) || 0,
+    parseInt(h.slice(4, 6), 16) || 0
+  ]
+  rgbCache.set(hex, v)
+  return v
+}
 import { player } from '@/lib/player'
 
 /**
@@ -111,32 +126,61 @@ export default function Waveform({ track }: { track: Track | null }): React.Reac
       return
     }
 
-    const { buckets, min, max, rms } = peaks
+    // palette spectrale : graves = encre, médiums = gris chaud, aigus = orange.
+    // La couleur de chaque barre est le mélange pondéré par l'énergie des bandes.
+    const cLow = hexToRgb(ink)
+    const cMid = hexToRgb(soft)
+    const cHigh = hexToRgb(accent)
+
+    const { buckets, min, max, low, mid: bandMid, high, trans } = peaks
     const step = w / buckets
-    // silhouette min/max — 1 trait par bucket, sous-échantillonné si trop étroit
     const stride = Math.max(1, Math.floor(buckets / w))
     for (let b = 0; b < buckets; b += stride) {
       const x = b * step
       let lo = 255
       let hi = 0
-      let energy = 0
+      let eL = 0
+      let eM = 0
+      let eH = 0
+      let eT = 0
       for (let k = b; k < Math.min(buckets, b + stride); k++) {
         if (min[k] < lo) lo = min[k]
         if (max[k] > hi) hi = max[k]
-        if (rms[k] > energy) energy = rms[k]
+        if (low[k] > eL) eL = low[k]
+        if (bandMid[k] > eM) eM = bandMid[k]
+        if (high[k] > eH) eH = high[k]
+        if (trans[k] > eT) eT = trans[k]
       }
+      // les aigus portent moins d'énergie : on les surpondère pour la couleur
+      const wL = eL
+      const wM = eM * 1.4
+      const wH = eH * 2.2
+      const sum = wL + wM + wH || 1
+      const r = Math.round((cLow[0] * wL + cMid[0] * wM + cHigh[0] * wH) / sum)
+      const g = Math.round((cLow[1] * wL + cMid[1] * wM + cHigh[1] * wH) / sum)
+      const bl = Math.round((cLow[2] * wL + cMid[2] * wM + cHigh[2] * wH) / sum)
+      const color = `rgb(${r},${g},${bl})`
+
+      const played = x <= playedX
+      const bw = Math.max(1, step * stride - 0.4)
       const yTop = mid - ((hi - 128) / 128) * (mid - 2)
       const yBot = mid - ((lo - 128) / 128) * (mid - 2)
-      const played = x <= playedX
-      // silhouette
-      ctx.fillStyle = played ? accent : ink
-      ctx.globalAlpha = played ? 0.55 : 0.38
-      ctx.fillRect(x, yTop, Math.max(1, step * stride - 0.4), Math.max(1, yBot - yTop))
-      // cœur RMS
+
+      // tick de transitoire pleine hauteur, sous la barre
+      if (eT > 110) {
+        ctx.fillStyle = played ? accent : ink
+        ctx.globalAlpha = played ? 0.85 : 0.3
+        ctx.fillRect(x + bw / 2 - 0.75, 1, 1.5, h - 2)
+      }
+
+      // silhouette min/max (texture) puis cœur RMS total (masse colorée)
+      ctx.fillStyle = color
+      ctx.globalAlpha = played ? 0.4 : 0.2
+      ctx.fillRect(x, yTop, bw, Math.max(1, yBot - yTop))
+      const energy = Math.min(255, Math.sqrt(eL * eL + eM * eM + eH * eH))
       const rh = (energy / 255) * (h - 4)
-      ctx.globalAlpha = 1
-      ctx.fillStyle = played ? accent : ink
-      ctx.fillRect(x, mid - rh / 2, Math.max(1, step * stride - 0.4), Math.max(1, rh))
+      ctx.globalAlpha = played ? 1 : 0.5
+      ctx.fillRect(x, mid - rh / 2, bw, Math.max(1, rh))
     }
     ctx.globalAlpha = 1
 

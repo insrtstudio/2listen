@@ -16,14 +16,25 @@ STAGE="$(mktemp -d)/2Listen"
 RW="$(mktemp -d)/rw.dmg"
 trap 'hdiutil detach "/Volumes/${VOL}" >/dev/null 2>&1 || true' EXIT
 
+# hdiutil renvoie régulièrement EBUSY (16) sur les runners CI : on réessaie.
+retry() {
+  local attempt
+  for attempt in 1 2 3 4 5; do
+    if "$@"; then return 0; fi
+    echo "retry ${attempt}/5 : $*" >&2
+    sleep 4
+  done
+  return 1
+}
+
 mkdir -p "${STAGE}/.background"
 cp -R "${APP}" "${STAGE}/"
 ln -s /Applications "${STAGE}/Applications"
 cp "${BG}" "${STAGE}/.background/background.png"
 cp build/icon.icns "${STAGE}/.VolumeIcon.icns"
 
-hdiutil create -quiet -format UDRW -fs HFS+ -volname "${VOL}" -srcfolder "${STAGE}" "${RW}"
-hdiutil attach -quiet "${RW}" -noautoopen
+retry hdiutil create -quiet -ov -format UDRW -fs HFS+ -volname "${VOL}" -srcfolder "${STAGE}" "${RW}"
+retry hdiutil attach -quiet "${RW}" -noautoopen
 # icône de volume (SetFile si dispo, sinon tant pis)
 SetFile -a C "/Volumes/${VOL}" 2>/dev/null || true
 
@@ -52,9 +63,9 @@ tell application "Finder"
 end tell
 APPLESCRIPT
 sync
-hdiutil detach -quiet "/Volumes/${VOL}"
+retry hdiutil detach -quiet "/Volumes/${VOL}" || hdiutil detach -force "/Volumes/${VOL}"
 
 rm -f "${OUT}"
-hdiutil convert -quiet -format UDZO -imagekey zlib-level=9 -o "${OUT}" "${RW}"
+retry hdiutil convert -quiet -format UDZO -imagekey zlib-level=9 -o "${OUT}" "${RW}"
 rm -f "${RW}"
 echo "✓ ${OUT}"

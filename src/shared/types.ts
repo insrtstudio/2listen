@@ -81,12 +81,18 @@ export interface UpdateState {
   url?: string
 }
 
-/** Pics de forme d'onde : 3 canaux Uint8 (min, max, rms) centrés sur 128. */
+/** Pics de forme d'onde spectrale : 6 plans Uint8 par bucket.
+ *  min/max : silhouette (centrée sur 128) ; low/mid/high : énergie RMS par
+ *  bande (graves < 180 Hz, médiums, aigus > 3,5 kHz) ; trans : score de
+ *  transitoire (crête × flux). */
 export interface Peaks {
   buckets: number
   min: Uint8Array
   max: Uint8Array
-  rms: Uint8Array
+  low: Uint8Array
+  mid: Uint8Array
+  high: Uint8Array
+  trans: Uint8Array
 }
 
 export const AUDIO_EXTENSIONS = [
