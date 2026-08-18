@@ -106,9 +106,14 @@ export function StoreProvider({ children }: { children: ReactNode }): ReactNode 
     })
   }, [])
 
-  const persistPlaylists = useCallback((next: Playlist[]) => {
-    setPlaylists(next)
-    void window.tl.playlists.save(next)
+  // Mises à jour fonctionnelles : deux actions enchaînées dans le même tick
+  // (créer une playlist puis y ajouter des pistes) voient chacune l'état frais.
+  const persistPlaylists = useCallback((updater: (prev: Playlist[]) => Playlist[]) => {
+    setPlaylists((prev) => {
+      const next = updater(prev)
+      void window.tl.playlists.save(next)
+      return next
+    })
   }, [])
 
   const addRoot = useCallback(async () => {
@@ -134,44 +139,44 @@ export function StoreProvider({ children }: { children: ReactNode }): ReactNode 
   const createPlaylist = useCallback((name: string): string => {
     const id = newId()
     const now = Date.now()
-    persistPlaylists([...playlists, { id, name: name.trim() || 'Playlist', trackIds: [], createdAt: now, updatedAt: now }])
+    persistPlaylists((prev) => [...prev, { id, name: name.trim() || 'Playlist', trackIds: [], createdAt: now, updatedAt: now }])
     return id
-  }, [playlists, persistPlaylists])
+  }, [persistPlaylists])
 
   const renamePlaylist = useCallback((id: string, name: string) => {
-    persistPlaylists(playlists.map((p) => (p.id === id ? { ...p, name: name.trim() || p.name, updatedAt: Date.now() } : p)))
-  }, [playlists, persistPlaylists])
+    persistPlaylists((prev) => prev.map((p) => (p.id === id ? { ...p, name: name.trim() || p.name, updatedAt: Date.now() } : p)))
+  }, [persistPlaylists])
 
   const deletePlaylist = useCallback((id: string) => {
-    persistPlaylists(playlists.filter((p) => p.id !== id))
+    persistPlaylists((prev) => prev.filter((p) => p.id !== id))
     setView((v) => (v.kind === 'playlist' && v.id === id ? { kind: 'tracks' } : v))
-  }, [playlists, persistPlaylists])
+  }, [persistPlaylists])
 
   const addToPlaylist = useCallback((id: string, trackIds: string[]) => {
-    persistPlaylists(playlists.map((p) => {
+    persistPlaylists((prev) => prev.map((p) => {
       if (p.id !== id) return p
       const have = new Set(p.trackIds)
       const added = trackIds.filter((t) => !have.has(t))
       return added.length ? { ...p, trackIds: [...p.trackIds, ...added], updatedAt: Date.now() } : p
     }))
-  }, [playlists, persistPlaylists])
+  }, [persistPlaylists])
 
   const removeFromPlaylist = useCallback((id: string, trackIds: string[]) => {
     const drop = new Set(trackIds)
-    persistPlaylists(playlists.map((p) =>
+    persistPlaylists((prev) => prev.map((p) =>
       p.id === id ? { ...p, trackIds: p.trackIds.filter((t) => !drop.has(t)), updatedAt: Date.now() } : p
     ))
-  }, [playlists, persistPlaylists])
+  }, [persistPlaylists])
 
   const movePlaylistTrack = useCallback((id: string, from: number, to: number) => {
-    persistPlaylists(playlists.map((p) => {
+    persistPlaylists((prev) => prev.map((p) => {
       if (p.id !== id) return p
       const ids = [...p.trackIds]
       const [moved] = ids.splice(from, 1)
       ids.splice(to, 0, moved)
       return { ...p, trackIds: ids, updatedAt: Date.now() }
     }))
-  }, [playlists, persistPlaylists])
+  }, [persistPlaylists])
 
   const setRating = useCallback((trackId: string, rating: number) => {
     setTracks((ts) => ts.map((t) => (t.id === trackId ? { ...t, rating } : t)))

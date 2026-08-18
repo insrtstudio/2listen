@@ -21,16 +21,32 @@ Lecteur de musique **locale** et **lossless** pour macOS — brutaliste, rapide,
 npm install
 npm run dev        # electron-vite HMR
 npm run typecheck
-npm run dist       # .dmg + .zip non publiés (dist/)
+npm run dist       # build + .zip (dist/)
+npm run dmg        # .dmg stylisé (fond de marque, glisser vers Applications)
 ```
+
+### Tests e2e
+
+Le harnais `TL_E2E` pilote l'app réelle (DOM + captures d'écran) :
+
+```bash
+npm run build
+TL_E2E="$PWD/scripts/e2e.js" TL_E2E_OUT=/tmp npx electron .
+```
+
+Scénario couvert : bibliothèque, lecture, tri, recherche, menu contextuel,
+création de playlist, albums/artistes, raccourcis clavier, seek waveform,
+scan incrémental.
 
 ## Release automatique
 
 Le workflow `.github/workflows/release.yml` se déclenche à chaque push sur `main` :
 
 1. version auto-incrémentée `0.1.<numéro de run>` (strictement croissante) ;
-2. build `.dmg` + `.zip` (arm64 + x64) ;
-3. publication en release GitHub — `electron-updater` la détecte au prochain lancement (vérification toutes les 30 min).
+2. build `.zip` (arm64 + x64) pour l'auto-update, publiés par electron-builder ;
+3. build des `.dmg` stylisés (`scripts/make-dmg.sh` : fond de marque rendu par
+   Electron, `.DS_Store` écrit par le Finder) attachés à la même release ;
+4. `electron-updater` détecte la release au prochain lancement (vérification toutes les 30 min).
 
 Prérequis : créer le dépôt GitHub et faire correspondre `publish.owner/repo`
 dans `electron-builder.yml` **et** `REPO_URL` dans `src/main/index.ts`.

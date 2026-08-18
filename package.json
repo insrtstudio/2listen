@@ -16,7 +16,8 @@
     "build": "npm run typecheck && electron-vite build",
     "icon": "node scripts/make-icon.mjs",
     "dist": "npm run build && electron-builder --mac --publish never",
-    "release": "npm run build && electron-builder --mac --publish always"
+    "release": "npm run build && electron-builder --mac --publish always",
+    "dmg": "node scripts/make-dmg-bg.mjs && bash scripts/make-dmg.sh dist/mac/2Listen.app $npm_package_version dist/2Listen-$npm_package_version.dmg"
   },
   "devDependencies": {
     "@types/node": "^22.10.5",

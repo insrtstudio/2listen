@@ -34,15 +34,27 @@ jobs:
           npm version "$VERSION" --no-git-tag-version
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
 
-      - name: Icône
-        run: node scripts/make-icon.mjs
+      - name: Icône + fond du DMG
+        run: |
+          node scripts/make-icon.mjs
+          npx electron scripts/make-dmg-bg.mjs
 
-      - name: Build + publication GitHub Releases
+      - name: Build + publication GitHub Releases (zip auto-update)
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # pas de certificat : on désactive la découverte de signature
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
         run: npm run release
+
+      - name: DMG stylisés (arm64 + x64) attachés à la release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          bash scripts/make-dmg.sh "dist/mac-arm64/2Listen.app" "$VERSION" "dist/2Listen-$VERSION-arm64.dmg"
+          bash scripts/make-dmg.sh "dist/mac/2Listen.app"       "$VERSION" "dist/2Listen-$VERSION-x64.dmg"
+          gh release upload "v$VERSION" \
+            "dist/2Listen-$VERSION-arm64.dmg" \
+            "dist/2Listen-$VERSION-x64.dmg" --clobber
 
   typecheck:
     runs-on: macos-latest

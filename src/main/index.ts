@@ -43,6 +43,23 @@ function createWindow(): void {
 
   mainWindow.once('ready-to-show', () => {
     mainWindow?.show()
+    // Debug : TL_E2E=/script.js exécute un scénario de test puis quitte.
+    const e2e = process.env.TL_E2E
+    if (e2e) {
+      setTimeout(async () => {
+        try {
+          const { readFileSync } = await import('node:fs')
+          const AsyncFunction = Object.getPrototypeOf(async () => {}).constructor as new (
+            ...args: string[]
+          ) => (win: BrowserWindow, appRef: typeof app) => Promise<void>
+          await new AsyncFunction('win', 'app', readFileSync(e2e, 'utf8'))(mainWindow!, app)
+        } catch (err) {
+          console.error('[e2e]', err)
+          process.exitCode = 1
+        }
+        app.quit()
+      }, 2500)
+    }
     // Debug : TL_SHOT=/chemin.png capture la fenêtre puis quitte.
     const shot = process.env.TL_SHOT
     if (shot) {
