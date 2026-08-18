@@ -6,7 +6,7 @@ import { initStores, library, settings } from './store'
 import { initUpdater } from './updater'
 
 // Renseigné aussi dans package.json > build.publish pour electron-builder.
-const REPO_URL = 'https://github.com/thibaultpierens/2listen'
+const REPO_URL = 'https://github.com/insrtstudio/2listen'
 
 let mainWindow: BrowserWindow | null = null
 

@@ -13,7 +13,7 @@ files:
 # ⚠️ Adapter owner/repo si le dépôt GitHub a un autre nom.
 publish:
   provider: github
-  owner: thibaultpierens
+  owner: insrtstudio
   repo: 2listen
   # publie directement (pas de brouillon) pour que electron-updater voie la release
   releaseType: release
