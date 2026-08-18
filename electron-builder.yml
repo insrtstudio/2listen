@@ -1,0 +1,39 @@
+appId: fr.insrt.2listen
+productName: 2Listen
+copyright: © 2026 Thibault Pierens
+
+directories:
+  buildResources: build
+  output: dist
+
+files:
+  - out/**
+  - "!node_modules/**"
+
+# ⚠️ Adapter owner/repo si le dépôt GitHub a un autre nom.
+publish:
+  provider: github
+  owner: thibaultpierens
+  repo: 2listen
+
+mac:
+  category: public.app-category.music
+  icon: build/icon.icns
+  # zip requis par electron-updater, dmg pour la distribution
+  target:
+    - target: dmg
+      arch: [arm64, x64]
+    - target: zip
+      arch: [arm64, x64]
+  darkModeSupport: true
+  # Pas de certificat Developer ID → build non signé (voir README)
+  identity: null
+
+dmg:
+  title: "2Listen ${version}"
+  iconSize: 100
+  contents:
+    - { x: 130, y: 190, type: file }
+    - { x: 410, y: 190, type: link, path: /Applications }
+
+npmRebuild: false

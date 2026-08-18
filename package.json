@@ -1,0 +1,36 @@
+{
+  "name": "2listen",
+  "productName": "2Listen",
+  "version": "0.1.0",
+  "description": "Lecteur de musique locale lossless — bibliothèque, playlists, waveform haute définition.",
+  "author": "Thibault Pierens <thibault@insrt.fr>",
+  "license": "UNLICENSED",
+  "private": true,
+  "main": "./out/main/index.js",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "start": "electron-vite preview",
+    "typecheck:node": "tsc -p tsconfig.node.json --noEmit",
+    "typecheck:web": "tsc -p tsconfig.web.json --noEmit",
+    "typecheck": "npm run typecheck:node && npm run typecheck:web",
+    "build": "npm run typecheck && electron-vite build",
+    "icon": "node scripts/make-icon.mjs",
+    "dist": "npm run build && electron-builder --mac --publish never",
+    "release": "npm run build && electron-builder --mac --publish always"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.5",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.4",
+    "electron": "^33.3.1",
+    "electron-builder": "^25.1.8",
+    "electron-vite": "^2.3.0",
+    "music-metadata": "^10.7.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "typescript": "^5.7.3",
+    "vite": "^5.4.11",
+    "electron-updater": "^6.3.9"
+  }
+}
