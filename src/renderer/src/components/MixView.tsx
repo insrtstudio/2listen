@@ -1,11 +1,11 @@
 import { useState, useSyncExternalStore } from 'react'
 import { fmtQuality } from '@/lib/format'
-import { deckA, deckB, getCrossfade, setCrossfade, sync, type Deck } from '@/lib/decks'
+import { beatDelta, deckA, deckB, getCrossfade, setCrossfade, syncBoth, type Deck } from '@/lib/decks'
 import { useStore } from '@/lib/store'
 import TrackPicker from './TrackPicker'
 import Waveform from './Waveform'
 
-function DeckPanel({ deck, other, accent }: { deck: Deck; other: Deck; accent: boolean }): React.ReactNode {
+function DeckPanel({ deck, accent }: { deck: Deck; accent: boolean }): React.ReactNode {
   const snap = useSyncExternalStore(deck.subscribe, deck.getSnapshot)
   const { tracks } = useStore()
   const t = snap.track
@@ -99,15 +99,6 @@ function DeckPanel({ deck, other, accent }: { deck: Deck; other: Deck; accent: b
         </button>
         <button
           className="mono tap"
-          onClick={() => sync(deck, other)}
-          title="Cale le tempo sur l'autre platine"
-          disabled={!snap.analysis?.bpm || !other.effectiveBpm()}
-          style={{ fontSize: 9, letterSpacing: '.1em', border: '1.5px solid var(--ink)', padding: '5px 9px' }}
-        >
-          SYNC
-        </button>
-        <button
-          className="mono tap"
           onClick={() => deck.setMasterTempo(!snap.masterTempo)}
           title="Master tempo : le pitch ne change plus la hauteur"
           style={{
@@ -165,6 +156,7 @@ export default function MixView(): React.ReactNode {
 
   const bpmA = deckA.effectiveBpm()
   const bpmB = deckB.effectiveBpm()
+  const bd = beatDelta(deckA, deckB)
   const camA = snapA.analysis?.camelot
   const camB = snapB.analysis?.camelot
   /** Compatibilité Camelot : même case, ±1 sur la roue, ou A↔B du même numéro. */
@@ -190,9 +182,12 @@ export default function MixView(): React.ReactNode {
             Table de <span className="serif" style={{ fontStyle: 'italic', fontWeight: 400 }}>mix</span>
           </h1>
         </div>
-        {bpmA && bpmB && (
+        {bpmA && bpmB && bd && (
           <div className="mono" style={{ fontSize: 10, textAlign: 'right', color: 'var(--ink-soft)' }}>
-            Δ TEMPO {Math.abs(bpmA - bpmB).toFixed(1)} BPM
+            <span style={{ color: bd.delta < 0.2 ? 'var(--accent)' : 'inherit' }}>
+              Δ TEMPO {bd.delta.toFixed(1)} BPM{bd.ratio !== 1 ? ` (rapport ${bd.ratio === 2 ? '2:1' : '1:2'})` : ''}
+              {bd.delta < 0.2 ? ' — CALÉ ✓' : ''}
+            </span>
             {camA && camB && (
               <span style={{ marginLeft: 10, color: keyCompatible(camA, camB) ? 'var(--accent)' : 'var(--ink-soft)' }}>
                 {camA} × {camB} — {keyCompatible(camA, camB) ? 'CLÉS COMPATIBLES ✓' : 'clés éloignées'}
@@ -204,12 +199,29 @@ export default function MixView(): React.ReactNode {
 
       <div style={{ flex: 1, overflowY: 'auto', minHeight: 0, padding: 18, display: 'flex', flexDirection: 'column', gap: 14 }}>
         <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap' }}>
-          <DeckPanel deck={deckA} other={deckB} accent />
-          <DeckPanel deck={deckB} other={deckA} accent={false} />
+          <DeckPanel deck={deckA} accent />
+          <DeckPanel deck={deckB} accent={false} />
         </div>
 
-        {/* crossfader */}
+        {/* crossfader + beatmatch */}
         <div style={{ border: 'var(--line)', padding: '12px 18px', display: 'flex', alignItems: 'center', gap: 14 }}>
+          <button
+            className="tap"
+            onClick={() => syncBoth(deckA, deckB)}
+            disabled={!snapA.analysis?.bpm || !snapB.analysis?.bpm}
+            title="Les deux platines convergent vers un tempo commun (chaque pitch bouge deux fois moins)"
+            style={{
+              border: '2px solid var(--ink)',
+              background: bd && bd.delta < 0.2 ? 'var(--ink)' : 'var(--accent)',
+              color: bd && bd.delta < 0.2 ? 'var(--paper)' : '#111',
+              font: '700 12px var(--grotesk)',
+              letterSpacing: '.06em',
+              padding: '9px 16px',
+              flex: 'none'
+            }}
+          >
+            SYNC ⇄
+          </button>
           <span style={{ font: '700 15px var(--grotesk)', color: 'var(--accent)' }}>A</span>
           <input
             type="range"

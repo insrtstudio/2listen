@@ -194,10 +194,35 @@ export function getCrossfade(): number {
 
 setCrossfade(0.5)
 
-/** SYNC : cale le tempo de `deck` sur celui de l'autre platine. */
-export function sync(deck: Deck, other: Deck): void {
-  const from = deck.analysis?.bpm
-  const to = other.effectiveBpm()
-  if (!from || !to) return
-  deck.setRate(to / from)
+/**
+ * SYNC bilatéral : les deux platines convergent vers un tempo commun
+ * (moyenne géométrique) — chaque pitch bouge deux fois moins qu'un esclavage
+ * classique, donc reste bien plus souvent dans la plage ±8 %. Si un morceau
+ * est en half/double-time, on se cale sur le rapport 2:1 le plus proche.
+ */
+export function syncBoth(a: Deck, b: Deck): void {
+  const bpmA = a.analysis?.bpm
+  const bpmB = b.analysis?.bpm
+  if (!bpmA || !bpmB) return
+  // rapport de B le plus proche de A (1x, 2x ou ½x) en distance log
+  const tB = [bpmB, bpmB * 2, bpmB / 2].reduce((best, cand) =>
+    Math.abs(Math.log(bpmA / cand)) < Math.abs(Math.log(bpmA / best)) ? cand : best
+  )
+  const target = Math.sqrt(bpmA * tB)
+  a.setRate(target / bpmA)
+  // si la borne ±8 % a tronqué A, B rejoint le tempo réellement atteint
+  b.setRate((bpmA * a.rate) / tB)
+}
+
+/** Écart de battement résiduel entre les platines, en tenant compte du 2:1. */
+export function beatDelta(a: Deck, b: Deck): { delta: number; ratio: 1 | 2 | 0.5 } | null {
+  const ea = a.effectiveBpm()
+  const eb = b.effectiveBpm()
+  if (!ea || !eb) return null
+  let best: { delta: number; ratio: 1 | 2 | 0.5 } = { delta: Math.abs(ea - eb), ratio: 1 }
+  for (const ratio of [2, 0.5] as const) {
+    const d = Math.abs(ea - eb * ratio)
+    if (d < best.delta) best = { delta: d, ratio }
+  }
+  return best
 }
