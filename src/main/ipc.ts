@@ -99,7 +99,7 @@ export function registerIpc(win: () => BrowserWindow | null): void {
 
   ipcMain.handle('update:state', () => getUpdateState())
   ipcMain.handle('update:install', () => installNow())
-  ipcMain.handle('update:check', () => checkNow())
+  ipcMain.handle('update:check', () => checkNow(true))
   ipcMain.handle('update:openUrl', (_e, url: string) => {
     if (/^https:\/\/github\.com\//.test(url)) void shell.openExternal(url)
   })

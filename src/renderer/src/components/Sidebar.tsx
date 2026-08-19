@@ -126,35 +126,82 @@ export default function Sidebar(): React.ReactNode {
   )
 }
 
+/** Bloc de mise à jour toujours visible : l'état n'est jamais silencieux. */
 function UpdateBadge({ status }: { status: ReturnType<typeof useStore>['update'] }): React.ReactNode {
   if (status.status === 'ready') {
     return (
       <button
         className="tap"
         onClick={() => void window.tl.update.install()}
-        style={{ width: '100%', padding: '10px 14px', background: 'var(--accent)', color: '#111', font: '700 11px var(--grotesk)', letterSpacing: '.06em', textAlign: 'left' }}
+        style={{
+          width: '100%',
+          padding: '12px 14px',
+          background: 'var(--accent)',
+          color: '#111',
+          font: '700 12px var(--grotesk)',
+          letterSpacing: '.06em',
+          textAlign: 'left'
+        }}
       >
         ↻ INSTALLER v{status.version}
+        <span style={{ display: 'block', font: '400 8px var(--mono)', marginTop: 3, letterSpacing: '.04em' }}>
+          redémarre l'app en quelques secondes
+        </span>
       </button>
     )
   }
-  if (status.status === 'downloading') {
-    return (
-      <div className="mono" style={{ padding: '10px 14px', fontSize: 9, color: 'var(--ink-soft)' }}>
-        MAJ v{status.version} — {status.percent ?? 0}%
-      </div>
-    )
+
+  const row = (label: React.ReactNode, action?: { text: string; onClick: () => void }): React.ReactNode => (
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: 8,
+        padding: '8px 14px'
+      }}
+    >
+      <span className="mono" style={{ fontSize: 9, color: 'var(--ink-soft)', letterSpacing: '.06em', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        {label}
+      </span>
+      {action && (
+        <button
+          className="mono tap"
+          onClick={action.onClick}
+          style={{ fontSize: 8, letterSpacing: '.1em', border: '1.5px solid var(--ink)', padding: '3px 7px', flex: 'none' }}
+        >
+          {action.text}
+        </button>
+      )}
+    </div>
+  )
+
+  switch (status.status) {
+    case 'checking':
+      return row(<span style={{ animation: 'blink 1s steps(1) infinite' }}>VÉRIFICATION…</span>)
+    case 'available':
+      return row(`MAJ v${status.version} trouvée…`)
+    case 'downloading':
+      return (
+        <div style={{ padding: '8px 14px' }}>
+          <div className="mono" style={{ fontSize: 9, color: 'var(--ink-soft)', letterSpacing: '.06em' }}>
+            MAJ v{status.version} — {status.percent ?? 0}%
+          </div>
+          <div style={{ height: 5, border: '1.5px solid var(--ink)', marginTop: 5 }}>
+            <div style={{ height: '100%', width: `${status.percent ?? 0}%`, background: 'var(--accent)' }} />
+          </div>
+        </div>
+      )
+    case 'error':
+      return row(
+        <span title={status.message}>MAJ : erreur</span>,
+        status.url
+          ? { text: 'PAGE', onClick: () => void window.tl.update.openUrl(status.url!) }
+          : { text: 'RÉESSAYER', onClick: () => void window.tl.update.check() }
+      )
+    case 'none':
+      return row('À jour', { text: 'VÉRIFIER', onClick: () => void window.tl.update.check() })
+    default:
+      return row('MAJ : en attente…', { text: 'VÉRIFIER', onClick: () => void window.tl.update.check() })
   }
-  if (status.status === 'error' && status.manual && status.url && status.version) {
-    return (
-      <button
-        className="tap"
-        onClick={() => void window.tl.update.openUrl(status.url!)}
-        style={{ width: '100%', padding: '10px 14px', font: '500 10px var(--mono)', color: 'var(--accent)', textAlign: 'left' }}
-      >
-        ↗ MAJ dispo — télécharger
-      </button>
-    )
-  }
-  return null
 }

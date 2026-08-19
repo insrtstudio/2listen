@@ -3,7 +3,7 @@ import { join } from 'node:path'
 import { registerIpc } from './ipc'
 import { registerHandler, registerScheme } from './protocol'
 import { initStores, library, settings } from './store'
-import { initUpdater } from './updater'
+import { checkNow, initUpdater } from './updater'
 
 // Renseigné aussi dans package.json > build.publish pour electron-builder.
 const REPO_URL = 'https://github.com/insrtstudio/2listen'
@@ -119,6 +119,9 @@ app.whenReady().then(async () => {
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })
+
+  // revenir sur l'app déclenche une vérification de MAJ (throttlée à 60 s)
+  app.on('browser-window-focus', () => checkNow())
 })
 
 app.on('window-all-closed', () => {
