@@ -1,4 +1,5 @@
 import type { Peaks } from '@shared/types'
+import { decodeTrack } from './decode'
 import type { PeaksResult } from '../workers/peaks.worker'
 import PeaksWorker from '../workers/peaks.worker?worker'
 
@@ -25,17 +26,9 @@ function unpack(buckets: number, buf: ArrayBuffer): Peaks {
   }
 }
 
-async function compute(id: string, audioUrl: string): Promise<Peaks | null> {
-  let decoded: AudioBuffer
-  try {
-    const res = await fetch(audioUrl)
-    const raw = await res.arrayBuffer()
-    // Contexte jetable : uniquement pour décoder, jamais pour jouer.
-    const ctx = new OfflineAudioContext(1, 1, 44100)
-    decoded = await ctx.decodeAudioData(raw)
-  } catch {
-    return null
-  }
+async function compute(id: string, path: string): Promise<Peaks | null> {
+  const decoded = await decodeTrack(path)
+  if (!decoded) return null
 
   const channels: Float32Array[] = []
   for (let c = 0; c < Math.min(2, decoded.numberOfChannels); c++) {
@@ -62,7 +55,7 @@ async function compute(id: string, audioUrl: string): Promise<Peaks | null> {
 }
 
 /** Mémoire → disque → calcul. Une seule promesse en vol par piste. */
-export function getPeaks(id: string, audioUrl: string): Promise<Peaks | null> {
+export function getPeaks(id: string, path: string): Promise<Peaks | null> {
   const cached = memory.get(id)
   if (cached) return Promise.resolve(cached)
   const inflight = pending.get(id)
@@ -76,7 +69,7 @@ export function getPeaks(id: string, audioUrl: string): Promise<Peaks | null> {
       memory.set(id, peaks)
       return peaks
     }
-    const peaks = await compute(id, audioUrl)
+    const peaks = await compute(id, path)
     if (peaks) {
       memory.set(id, peaks)
       if (memory.size > 40) {

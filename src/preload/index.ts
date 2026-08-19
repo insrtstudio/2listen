@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { LibraryData, Playlist, ScanProgress, Settings, Track, UpdateState } from '../shared/types'
+import type { LibraryData, Playlist, ScanProgress, Settings, TagEdit, Track, UpdateState } from '../shared/types'
 
 const api = {
   library: {
@@ -16,7 +16,9 @@ const api = {
       return () => ipcRenderer.removeListener('lib:scanProgress', handler)
     },
     updateTrack: (id: string, patch: Partial<Pick<Track, 'playCount' | 'lastPlayedAt' | 'rating'>>): Promise<void> =>
-      ipcRenderer.invoke('lib:updateTrack', id, patch)
+      ipcRenderer.invoke('lib:updateTrack', id, patch),
+    editTags: (id: string, patch: TagEdit): Promise<Track[]> => ipcRenderer.invoke('lib:editTags', id, patch),
+    pickCover: (): Promise<string | null> => ipcRenderer.invoke('cover:pick')
   },
   playlists: {
     save: (playlists: Playlist[]): Promise<void> => ipcRenderer.invoke('pl:save', playlists)
@@ -27,6 +29,7 @@ const api = {
   },
   url: {
     audio: (path: string): Promise<string> => ipcRenderer.invoke('url:audio', path),
+    wavFallback: (path: string): Promise<string | null> => ipcRenderer.invoke('audio:wavFallback', path),
     cover: (key: string): Promise<string> => ipcRenderer.invoke('url:cover', key)
   },
   peaks: {

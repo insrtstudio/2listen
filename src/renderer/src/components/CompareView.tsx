@@ -1,117 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { AnalysisData } from '@shared/types'
 import { getAnalysis } from '@/lib/analysis'
+import { computeCorrections, preview } from '@/lib/preview'
 import { player } from '@/lib/player'
 import { useStore } from '@/lib/store'
-
-/* ————— sélecteur de piste (recherche + liste) ————— */
-function TrackPicker({
-  label,
-  color,
-  trackId,
-  onPick
-}: {
-  label: string
-  color: string
-  trackId: string | null
-  onPick: (id: string | null) => void
-}): React.ReactNode {
-  const { tracks } = useStore()
-  const [q, setQ] = useState('')
-  const [open, setOpen] = useState(false)
-  const picked = tracks.find((t) => t.id === trackId) ?? null
-
-  const results = useMemo(() => {
-    const needle = q.trim().toLowerCase()
-    if (!needle) return tracks.slice(0, 8)
-    return tracks
-      .filter((t) => t.title.toLowerCase().includes(needle) || t.artist.toLowerCase().includes(needle))
-      .slice(0, 8)
-  }, [tracks, q])
-
-  return (
-    <div style={{ flex: 1, minWidth: 0, border: 'var(--line)', position: 'relative', background: 'var(--paper)' }}>
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 10,
-          padding: '8px 12px',
-          borderBottom: open ? 'var(--line)' : 'none'
-        }}
-      >
-        <span
-          style={{
-            width: 26,
-            height: 26,
-            flex: 'none',
-            display: 'grid',
-            placeItems: 'center',
-            background: color,
-            color: '#111',
-            font: '700 13px var(--grotesk)',
-            border: '2px solid var(--ink)'
-          }}
-        >
-          {label}
-        </span>
-        {picked ? (
-          <div style={{ minWidth: 0, flex: 1 }}>
-            <div style={{ font: '700 13px/1.2 var(--grotesk)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-              {picked.title}
-            </div>
-            <div className="mono" style={{ fontSize: 9, color: 'var(--ink-soft)' }}>
-              {picked.artist} · {picked.codec}
-            </div>
-          </div>
-        ) : (
-          <span className="serif" style={{ fontStyle: 'italic', color: 'var(--ink-soft)', flex: 1 }}>
-            {label === 'A' ? 'Choisir votre mix…' : 'Choisir la référence…'}
-          </span>
-        )}
-        <button className="mono tap" onClick={() => setOpen((v) => !v)}
-          style={{ fontSize: 9, letterSpacing: '.1em', border: '1.5px solid var(--ink)', padding: '3px 8px', flex: 'none' }}>
-          {picked ? 'CHANGER' : 'CHOISIR'}
-        </button>
-        {picked && (
-          <button className="tap" title="Vider" onClick={() => onPick(null)}
-            style={{ color: 'var(--accent)', font: '700 13px var(--grotesk)', flex: 'none' }}>
-            ✕
-          </button>
-        )}
-      </div>
-      {open && (
-        <div style={{ position: 'absolute', left: -2, right: -2, top: '100%', zIndex: 40, background: 'var(--paper)', border: 'var(--line-thick)', boxShadow: '6px 6px 0 rgba(17,17,17,.25)' }}>
-          <input
-            autoFocus
-            className="field"
-            placeholder="Rechercher…"
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            style={{ border: 'none', borderBottom: 'var(--line)' }}
-          />
-          {results.map((t) => (
-            <button
-              key={t.id}
-              onClick={() => {
-                onPick(t.id)
-                setOpen(false)
-                setQ('')
-              }}
-              style={{ display: 'block', width: '100%', textAlign: 'left', padding: '7px 12px', borderBottom: 'var(--line)', font: '500 12px var(--grotesk)' }}
-              className="hov"
-            >
-              {t.title} <span className="mono" style={{ fontSize: 9, color: 'var(--ink-soft)' }}>— {t.artist}</span>
-            </button>
-          ))}
-          {results.length === 0 && (
-            <div className="serif" style={{ fontStyle: 'italic', color: 'var(--ink-soft)', padding: '8px 12px' }}>Rien trouvé.</div>
-          )}
-        </div>
-      )}
-    </div>
-  )
-}
+import TrackPicker from './TrackPicker'
 
 /* ————— spectre superposé + bande de delta ————— */
 function SpectrumChart({ a, b, aligned }: { a: AnalysisData; b: AnalysisData; aligned: boolean }): React.ReactNode {
@@ -291,7 +184,7 @@ export default function CompareView(): React.ReactNode {
   const [dataB, setDataB] = useState<AnalysisData | null>(null)
   const [busy, setBusy] = useState<'A' | 'B' | null>(null)
   const [aligned, setAligned] = useState(true)
-  const [side, setSide] = useState<'A' | 'B'>('A')
+  const [side, setSide] = useState<'A' | 'B' | 'AC'>('A')
 
   const trackA = tracks.find((t) => t.id === settings.compareA) ?? null
   const trackB = tracks.find((t) => t.id === settings.compareB) ?? null
@@ -302,8 +195,7 @@ export default function CompareView(): React.ReactNode {
     if (!trackA) return
     setBusy('A')
     void (async () => {
-      const url = await window.tl.url.audio(trackA.path)
-      const d = await getAnalysis(trackA.id, url)
+      const d = await getAnalysis(trackA.id, trackA.path)
       if (alive) {
         setDataA(d)
         setBusy((v) => (v === 'A' ? null : v))
@@ -320,8 +212,7 @@ export default function CompareView(): React.ReactNode {
     if (!trackB) return
     setBusy('B')
     void (async () => {
-      const url = await window.tl.url.audio(trackB.path)
-      const d = await getAnalysis(trackB.id, url)
+      const d = await getAnalysis(trackB.id, trackB.path)
       if (alive) {
         setDataB(d)
         setBusy((v) => (v === 'B' ? null : v))
@@ -332,8 +223,23 @@ export default function CompareView(): React.ReactNode {
     }
   }, [trackB?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  /** Bascule A/B : même position, loudness alignée sur le moins fort. */
-  const listen = (which: 'A' | 'B'): void => {
+  const corrections = dataA && dataB ? computeCorrections(dataA, dataB) : null
+
+  /** Position courante quel que soit le moteur (lecteur ou prévisualisation). */
+  const currentFraction = (): number => {
+    if (side === 'AC') return preview.fraction()
+    return player.track ? player.fraction() : 0
+  }
+
+  /** Bascule A / A corrigé / B : même position, loudness alignée sur le moins fort. */
+  const listen = (which: 'A' | 'B' | 'AC'): void => {
+    const frac = currentFraction()
+    if (which === 'AC') {
+      if (!trackA || !corrections) return
+      setSide('AC')
+      void preview.play(trackA, frac, corrections, true)
+      return
+    }
     const track = which === 'A' ? trackA : trackB
     if (!track) return
     setSide(which)
@@ -342,7 +248,7 @@ export default function CompareView(): React.ReactNode {
       const target = Math.min(dataA.lufsI, dataB.lufsI)
       gainDb = target - (which === 'A' ? dataA.lufsI : dataB.lufsI) // ≤ 0
     }
-    void player.playSolo(track, player.track ? player.fraction() : 0, gainDb)
+    void player.playSolo(track, frac, gainDb)
   }
 
   const metric = (
@@ -413,6 +319,18 @@ export default function CompareView(): React.ReactNode {
                 </button>
                 <button
                   className="tap"
+                  onClick={() => listen('AC')}
+                  title="A avec les corrections appliquées (EQ + compression)"
+                  disabled={!corrections || (corrections.eq.length === 0 && !corrections.comp)}
+                  style={{
+                    width: 92, height: 36, border: '2px solid var(--ink)', marginLeft: -2, font: '700 12px var(--grotesk)',
+                    background: side === 'AC' ? 'var(--accent)' : 'transparent', color: side === 'AC' ? '#111' : 'inherit'
+                  }}
+                >
+                  A corrigé ✦
+                </button>
+                <button
+                  className="tap"
                   onClick={() => listen('B')}
                   style={{
                     width: 56, height: 36, border: '2px solid var(--ink)', marginLeft: -2, font: '700 15px var(--grotesk)',
@@ -430,6 +348,27 @@ export default function CompareView(): React.ReactNode {
                 la bascule garde la position — comparez sans le biais du « plus fort = mieux »
               </span>
             </div>
+
+            {corrections && (
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+                <span className="mono" style={{ fontSize: 8, letterSpacing: '.12em', color: 'var(--ink-soft)' }}>
+                  CORRECTIONS « A CORRIGÉ ✦ » :
+                </span>
+                {corrections.eq.map((m) => (
+                  <span key={m.freq} className="badge" style={{ color: side === 'AC' ? 'var(--accent)' : undefined }}>
+                    EQ {m.label} {m.gainDb > 0 ? '+' : ''}{m.gainDb} dB @ {m.freq >= 1000 ? `${m.freq / 1000}k` : m.freq} Hz
+                  </span>
+                ))}
+                {corrections.comp && (
+                  <span className="badge" style={{ color: side === 'AC' ? 'var(--accent)' : undefined }}>
+                    COMP {corrections.comp.ratio}:1 @ {corrections.comp.thresholdDb} dB · make-up {corrections.comp.makeupDb > 0 ? '+' : ''}{corrections.comp.makeupDb} dB
+                  </span>
+                )}
+                {corrections.eq.length === 0 && !corrections.comp && (
+                  <span className="mono" style={{ fontSize: 9, color: 'var(--ink-soft)' }}>aucune correction nécessaire — le mix colle déjà à la référence</span>
+                )}
+              </div>
+            )}
 
             {/* spectre + métriques */}
             <div style={{ display: 'grid', gridTemplateColumns: 'minmax(340px, 1.5fr) minmax(280px, 1fr)', gap: 14, alignItems: 'stretch' }}>
@@ -461,6 +400,13 @@ export default function CompareView(): React.ReactNode {
                 {metric('RMS', 'dB', dataA.rmsDb, dataB.rmsDb)}
                 {metric('FACTEUR DE CRÊTE', 'dB', dataA.crestDb, dataB.crestDb)}
                 {metric('PLR', 'dB', dataA.plr, dataB.plr)}
+                {metric('BPM', 'BPM', dataA.bpm || undefined, dataB.bpm || undefined, false)}
+                <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr 1fr 1fr', gap: 8, padding: '7px 12px', alignItems: 'baseline' }}>
+                  <span className="mono" style={{ fontSize: 9, letterSpacing: '.08em', color: 'var(--ink-soft)' }}>TONALITÉ</span>
+                  <span style={{ font: '700 13px var(--grotesk)', color: 'var(--accent)' }} title={dataA.keyName}>{dataA.camelot}</span>
+                  <span style={{ font: '700 13px var(--grotesk)' }} title={dataB.keyName}>{dataB.camelot}</span>
+                  <span />
+                </div>
               </div>
             </div>
 

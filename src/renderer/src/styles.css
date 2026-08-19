@@ -176,3 +176,10 @@ input[type="range"].vol::-webkit-slider-thumb {
 
 /* la légende spectrale s'efface quand la fenêtre est étroite */
 @media (max-width: 1180px) { .wf-legend { display: none !important; } }
+
+/* en-têtes de tri : cliquables, et ça se voit */
+.sorth { cursor: pointer; }
+.sorth:hover { color: var(--accent) !important; text-decoration: underline; text-underline-offset: 3px; }
+
+/* crossfader : pouce plus large */
+input[type="range"].xfader::-webkit-slider-thumb { width: 26px; height: 20px; }

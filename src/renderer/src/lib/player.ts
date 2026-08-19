@@ -1,4 +1,5 @@
 import type { Track } from '@shared/types'
+import { claimScene, registerScene } from './audiofocus'
 
 export interface PlayerSnapshot {
   track: Track | null
@@ -58,6 +59,9 @@ class Player {
         if (el === this.active && this.track) this.next()
       })
     }
+    registerScene('player', () => {
+      if (!this.active.paused) this.active.pause()
+    })
     void navigator.mediaSession?.setActionHandler?.('play', () => this.toggle())
     navigator.mediaSession?.setActionHandler('pause', () => this.toggle())
     navigator.mediaSession?.setActionHandler('previoustrack', () => this.prev())
@@ -66,6 +70,7 @@ class Player {
 
   private setPlaying(v: boolean, el: HTMLAudioElement): void {
     if (el !== this.active) return
+    if (v) claimScene('player')
     if (this.playing !== v) {
       this.playing = v
       this.emit()

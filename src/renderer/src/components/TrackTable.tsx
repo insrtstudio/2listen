@@ -3,6 +3,7 @@ import type { Track } from '@shared/types'
 import { fmtDuration, fmtQuality } from '@/lib/format'
 import { player } from '@/lib/player'
 import { useStore } from '@/lib/store'
+import TagEditor from './TagEditor'
 
 const ROW = 44
 
@@ -49,6 +50,7 @@ export default function TrackTable({ tracks, onReorder, onRemove, sort, sortDir,
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [anchor, setAnchor] = useState<number>(-1)
   const [menu, setMenu] = useState<{ x: number; y: number; ids: string[] } | null>(null)
+  const [editing, setEditing] = useState<Track | null>(null)
   const [dragIdx, setDragIdx] = useState<number | null>(null)
   const [dropIdx, setDropIdx] = useState<number | null>(null)
 
@@ -139,14 +141,15 @@ export default function TrackTable({ tracks, onReorder, onRemove, sort, sortDir,
   const head = (key: SortKey, label: string, style?: React.CSSProperties): React.ReactNode => (
     <button
       onClick={() => onSort?.(key)}
-      className="mono"
+      className="mono sorth"
+      title={`Trier par ${label.toLowerCase()}`}
       style={{
         fontSize: 9, letterSpacing: '.1em', textTransform: 'uppercase', textAlign: 'left',
         color: sort === key ? 'var(--accent)' : 'var(--ink-soft)', ...style
       }}
     >
       {label}
-      {sort === key ? (sortDir === 1 ? ' ↑' : ' ↓') : ''}
+      <span style={{ opacity: sort === key ? 1 : 0.45 }}>{sort === key ? (sortDir === 1 ? ' ↑' : ' ↓') : ' ⇅'}</span>
     </button>
   )
 
@@ -239,6 +242,7 @@ export default function TrackTable({ tracks, onReorder, onRemove, sort, sortDir,
         )}
       </div>
 
+      {editing && <TagEditor track={editing} onClose={() => setEditing(null)} />}
       {menu && (
         <div
           className="ctxmenu rise"
@@ -274,6 +278,15 @@ export default function TrackTable({ tracks, onReorder, onRemove, sort, sortDir,
             }}
           >
             + Nouvelle playlist…
+          </button>
+          <button
+            onClick={() => {
+              const t = tracks.find((x) => x.id === menu.ids[0])
+              if (t) setEditing(t)
+              setMenu(null)
+            }}
+          >
+            ✎ Modifier les infos…
           </button>
           <div className="sect">Outil A/B</div>
           <div style={{ display: 'flex', borderBottom: 'var(--line)' }}>

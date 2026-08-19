@@ -174,7 +174,9 @@ export async function scan(onProgress: (p: ScanProgress) => void): Promise<Track
     const byPath = new Map<string, Track>()
     for (const t of data.tracks) if (seen.has(t.path)) byPath.set(t.path, t)
     for (const t of fresh) byPath.set(t.path, t)
-    const tracks = [...byPath.values()]
+    // les corrections de métadonnées de l'utilisateur priment sur les tags lus
+    const edits = data.edits ?? {}
+    const tracks = [...byPath.values()].map((t) => (edits[t.id] ? { ...t, ...edits[t.id] } : t))
 
     const validIds = new Set(tracks.map((t) => t.id))
     const playlists = data.playlists.map((p) => ({
@@ -196,7 +198,8 @@ export async function vacuum(): Promise<void> {
   const data = library.get()
   const covers = new Set(data.tracks.map((t) => t.cover).filter(Boolean) as string[])
   const peaks = new Set(data.tracks.flatMap((t) => [`${t.id}.peaks`, `${t.id}.anal.json`]))
-  for (const [dir, keep] of [[paths.covers(), covers], [paths.peaks(), peaks]] as const) {
+  const empty = new Set<string>()
+  for (const [dir, keep] of [[paths.covers(), covers], [paths.peaks(), peaks], [paths.decodeTmp(), empty]] as const) {
     let files: string[] = []
     try {
       files = await fs.readdir(dir)

@@ -3,6 +3,7 @@ import { fmtDuration, fmtQuality } from '@/lib/format'
 import { player } from '@/lib/player'
 import { useStore } from '@/lib/store'
 import Cover from './Cover'
+import RtaPanel from './RtaPanel'
 import Waveform from './Waveform'
 
 const BAR = 124 // hauteur intérieure de la barre de lecture
@@ -66,6 +67,7 @@ export default function PlayerBar(): React.ReactNode {
   const snap = useSyncExternalStore(player.subscribe, player.getSnapshot)
   const { settings, patchSettings } = useStore()
   const t = snap.track
+  const [rta, setRta] = useState(false)
 
   const cycleRepeat = (): void => {
     const order: Array<'off' | 'all' | 'one'> = ['off', 'all', 'one']
@@ -73,7 +75,8 @@ export default function PlayerBar(): React.ReactNode {
   }
 
   return (
-    <footer style={{ flex: 'none' }}>
+    <footer style={{ flex: 'none', position: 'relative' }}>
+      {rta && <RtaPanel onClose={() => setRta(false)} />}
       {snap.stalled && (
         <div
           className="mono"
@@ -207,7 +210,22 @@ export default function PlayerBar(): React.ReactNode {
 
         {/* — waveform héros : légende, canvas et temps en flux, rien ne déborde — */}
         <div style={{ minWidth: 0, minHeight: 0, padding: '5px 14px 6px', display: 'flex', flexDirection: 'column' }}>
-          <div style={{ display: 'flex', justifyContent: 'flex-end', height: 12, flex: 'none', overflow: 'hidden' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', height: 12, flex: 'none', overflow: 'hidden' }}>
+            <button
+              className="mono tap"
+              onClick={() => setRta((v) => !v)}
+              title="Analyseur spectral temps réel"
+              style={{
+                fontSize: 8,
+                letterSpacing: '.12em',
+                lineHeight: 1,
+                padding: '1px 6px',
+                border: '1.5px solid currentColor',
+                color: rta ? 'var(--accent)' : 'var(--ink-soft)'
+              }}
+            >
+              RTA ▲
+            </button>
             {t && (
               <span
                 className="mono wf-legend"

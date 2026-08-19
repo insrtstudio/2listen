@@ -2,7 +2,7 @@ import {
   createContext, useCallback, useContext, useEffect, useMemo, useRef, useState,
   type ReactNode
 } from 'react'
-import type { Playlist, ScanProgress, Settings, Track, UpdateState } from '@shared/types'
+import type { Playlist, ScanProgress, Settings, TagEdit, Track, UpdateState } from '@shared/types'
 import { player } from './player'
 
 export type View =
@@ -13,6 +13,7 @@ export type View =
   | { kind: 'artist'; artist: string }
   | { kind: 'playlist'; id: string }
   | { kind: 'compare' }
+  | { kind: 'mix' }
 
 interface Store {
   tracks: Track[]
@@ -41,6 +42,7 @@ interface Store {
   removeFromPlaylist: (id: string, trackIds: string[]) => void
   movePlaylistTrack: (id: string, from: number, to: number) => void
   setRating: (trackId: string, rating: number) => void
+  applyTagEdits: (trackId: string, patch: TagEdit) => Promise<void>
 }
 
 const Ctx = createContext<Store | null>(null)
@@ -206,6 +208,11 @@ export function StoreProvider({ children }: { children: ReactNode }): ReactNode 
     }))
   }, [persistPlaylists])
 
+  const applyTagEdits = useCallback(async (trackId: string, patch: TagEdit) => {
+    const fresh = await window.tl.library.editTags(trackId, patch)
+    setTracks(fresh)
+  }, [])
+
   const setRating = useCallback((trackId: string, rating: number) => {
     setTracks((ts) => ts.map((t) => (t.id === trackId ? { ...t, rating } : t)))
     void window.tl.library.updateTrack(trackId, { rating })
@@ -215,10 +222,10 @@ export function StoreProvider({ children }: { children: ReactNode }): ReactNode 
     tracks, roots, excludedCount, playlists, scan, settings, update, view, search, version,
     setView, setSearch, addRoot, addFiles, removeTracks, restoreExcluded, removeRoot, rescan, patchSettings,
     createPlaylist, renamePlaylist, deletePlaylist, addToPlaylist,
-    removeFromPlaylist, movePlaylistTrack, setRating
+    removeFromPlaylist, movePlaylistTrack, setRating, applyTagEdits
   }), [tracks, roots, excludedCount, playlists, scan, settings, update, view, search, version,
     addRoot, addFiles, removeTracks, restoreExcluded, removeRoot, rescan, patchSettings, createPlaylist, renamePlaylist,
-    deletePlaylist, addToPlaylist, removeFromPlaylist, movePlaylistTrack, setRating])
+    deletePlaylist, addToPlaylist, removeFromPlaylist, movePlaylistTrack, setRating, applyTagEdits])
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>
 }

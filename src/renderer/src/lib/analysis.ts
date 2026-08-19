@@ -1,22 +1,16 @@
 import type { AnalysisData } from '@shared/types'
+import { decodeTrack } from './decode'
 import type { AnalysisResultMsg } from '../workers/analysis.worker'
 import AnalysisWorker from '../workers/analysis.worker?worker'
 
-const ANALYSIS_VERSION = 1
+const ANALYSIS_VERSION = 2
 
 const memory = new Map<string, AnalysisData>()
 const pending = new Map<string, Promise<AnalysisData | null>>()
 
-async function compute(id: string, audioUrl: string): Promise<AnalysisData | null> {
-  let decoded: AudioBuffer
-  try {
-    const res = await fetch(audioUrl)
-    const raw = await res.arrayBuffer()
-    const ctx = new OfflineAudioContext(1, 1, 44100)
-    decoded = await ctx.decodeAudioData(raw)
-  } catch {
-    return null
-  }
+async function compute(id: string, path: string): Promise<AnalysisData | null> {
+  const decoded = await decodeTrack(path)
+  if (!decoded) return null
   const channels: Float32Array[] = []
   for (let c = 0; c < Math.min(2, decoded.numberOfChannels); c++) channels.push(decoded.getChannelData(c))
 
@@ -40,7 +34,7 @@ async function compute(id: string, audioUrl: string): Promise<AnalysisData | nul
 }
 
 /** Mémoire → cache disque → calcul complet (une promesse en vol par piste). */
-export function getAnalysis(id: string, audioUrl: string): Promise<AnalysisData | null> {
+export function getAnalysis(id: string, path: string): Promise<AnalysisData | null> {
   const cached = memory.get(id)
   if (cached) return Promise.resolve(cached)
   const inflight = pending.get(id)
@@ -59,7 +53,7 @@ export function getAnalysis(id: string, audioUrl: string): Promise<AnalysisData 
         /* cache illisible : recalcul */
       }
     }
-    const data = await compute(id, audioUrl)
+    const data = await compute(id, path)
     if (data) {
       memory.set(id, data)
       if (memory.size > 24) {

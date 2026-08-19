@@ -10,7 +10,8 @@ export const paths = {
   library: () => join(app.getPath('userData'), 'library.json'),
   settings: () => join(app.getPath('userData'), 'settings.json'),
   covers: () => join(app.getPath('userData'), 'covers'),
-  peaks: () => join(app.getPath('userData'), 'peaks')
+  peaks: () => join(app.getPath('userData'), 'peaks'),
+  decodeTmp: () => join(app.getPath('userData'), 'decode-tmp')
 }
 
 export const defaultSettings: Settings = {
@@ -25,7 +26,7 @@ export const defaultSettings: Settings = {
   compareB: null
 }
 
-const emptyLibrary: LibraryData = { version: DATA_VERSION, roots: [], files: [], excluded: [], tracks: [], playlists: [] }
+const emptyLibrary: LibraryData = { version: DATA_VERSION, roots: [], files: [], excluded: [], tracks: [], playlists: [], edits: {} }
 
 /**
  * Écriture atomique et débattue : la bibliothèque tient en mémoire, le disque
@@ -93,7 +94,8 @@ export async function initStores(): Promise<void> {
   await Promise.all([libraryStore.load(), settingsStore.load()])
   await Promise.all([
     fs.mkdir(paths.covers(), { recursive: true }),
-    fs.mkdir(paths.peaks(), { recursive: true })
+    fs.mkdir(paths.peaks(), { recursive: true }),
+    fs.mkdir(paths.decodeTmp(), { recursive: true })
   ])
 }
 

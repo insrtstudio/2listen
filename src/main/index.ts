@@ -17,6 +17,9 @@ let mainWindow: BrowserWindow | null = null
 app.commandLine.appendSwitch('disable-features', 'ChromeWideEchoCancellation')
 app.commandLine.appendSwitch('try-supported-channel-layouts')
 
+// Tests : profil isolé pour ne jamais toucher la bibliothèque réelle.
+if (process.env.TL_USERDATA) app.setPath('userData', process.env.TL_USERDATA)
+
 registerScheme()
 
 function createWindow(): void {

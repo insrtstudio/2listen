@@ -26,7 +26,12 @@ import { player } from '@/lib/player'
  *  – progression orange, tête de lecture clignotante, survol = prévisualisation.
  * Redessinée uniquement quand la progression ou la taille change.
  */
-export default function Waveform({ track }: { track: Track | null }): React.ReactNode {
+export interface WaveSource {
+  onTime: (cb: (t: number, d: number) => void) => () => void
+  seek: (frac: number) => void
+}
+
+export default function Waveform({ track, source }: { track: Track | null; source?: WaveSource }): React.ReactNode {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const wrapRef = useRef<HTMLDivElement | null>(null)
   const peaksRef = useRef<Peaks | null>(null)
@@ -45,8 +50,7 @@ export default function Waveform({ track }: { track: Track | null }): React.Reac
     if (!track) return
     setLoading(true)
     void (async () => {
-      const url = await window.tl.url.audio(track.path)
-      const peaks = await getPeaks(track.id, url)
+      const peaks = await getPeaks(track.id, track.path)
       if (!alive) return
       peaksRef.current = peaks
       setLoading(false)
@@ -61,7 +65,8 @@ export default function Waveform({ track }: { track: Track | null }): React.Reac
   // suit la position de lecture sans passer par l'état React
   useEffect(() => {
     let raf = 0
-    const off = player.onTime((t, d) => {
+    const src = source ?? player
+    const off = src.onTime((t, d) => {
       const p = d > 0 ? t / d : 0
       if (Math.abs(p - progressRef.current) < 0.0004) return
       progressRef.current = p
@@ -73,7 +78,7 @@ export default function Waveform({ track }: { track: Track | null }): React.Reac
       cancelAnimationFrame(raf)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [source])
 
   // redessine au redimensionnement
   useEffect(() => {
@@ -209,14 +214,14 @@ export default function Waveform({ track }: { track: Track | null }): React.Reac
     if (!track) return
     draggingRef.current = true
     ;(e.target as HTMLElement).setPointerCapture(e.pointerId)
-    player.seek(fracFromEvent(e))
+    ;(source ?? player).seek(fracFromEvent(e))
   }
   const onPointerMove = (e: React.PointerEvent): void => {
     const frac = fracFromEvent(e)
     hoverRef.current = frac
     const d = track?.duration ?? 0
     setHoverLabel({ x: frac, text: fmtDuration(frac * d) })
-    if (draggingRef.current) player.seek(frac)
+    if (draggingRef.current) (source ?? player).seek(frac)
     draw()
   }
   const onPointerUp = (): void => {

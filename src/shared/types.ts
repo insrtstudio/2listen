@@ -44,6 +44,9 @@ export interface Playlist {
   updatedAt: number
 }
 
+/** Champs de métadonnées éditables par l'utilisateur. */
+export type TagEdit = Partial<Pick<Track, 'title' | 'artist' | 'albumArtist' | 'album' | 'genre' | 'year' | 'cover'>>
+
 export interface LibraryData {
   version: number
   roots: string[]
@@ -53,6 +56,8 @@ export interface LibraryData {
   excluded: string[]
   tracks: Track[]
   playlists: Playlist[]
+  /** Métadonnées corrigées par l'utilisateur (appliquées par-dessus les tags lus). */
+  edits: Record<string, TagEdit>
 }
 
 export interface ScanProgress {
@@ -86,6 +91,12 @@ export interface AnalysisData {
   spectrum: number[]
   /** Fréquences des points du spectre (Hz). */
   freqs: number[]
+  /** Tempo détecté (BPM, autocorrélation du flux d'énergie). */
+  bpm: number
+  /** Tonalité détectée (profils de Krumhansl), ex. « La mineur ». */
+  keyName: string
+  /** Notation Camelot (ex. 8A). */
+  camelot: string
 }
 
 export interface Settings {

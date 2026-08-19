@@ -3,6 +3,7 @@ import { useStore } from '@/lib/store'
 import PlayerBar from './PlayerBar'
 import Sidebar from './Sidebar'
 import CompareView from './CompareView'
+import MixView from './MixView'
 import { AlbumView, AlbumsView, ArtistView, ArtistsView, PlaylistView, TracksView } from './Views'
 
 export default function App(): React.ReactNode {
@@ -30,6 +31,8 @@ export default function App(): React.ReactNode {
               <ArtistView artist={view.artist} />
             ) : view.kind === 'compare' ? (
               <CompareView />
+            ) : view.kind === 'mix' ? (
+              <MixView />
             ) : (
               <PlaylistView id={view.id} />
             )}

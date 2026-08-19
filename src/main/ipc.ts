@@ -1,7 +1,10 @@
 import { BrowserWindow, dialog, ipcMain, shell } from 'electron'
+import { execFile } from 'node:child_process'
+import { promisify } from 'node:util'
+import { createHash } from 'node:crypto'
 import { promises as fs } from 'node:fs'
-import { join } from 'node:path'
-import type { LibraryData, Settings } from '../shared/types'
+import { extname, join } from 'node:path'
+import type { LibraryData, Settings, TagEdit } from '../shared/types'
 import { isScanning, scan, trackId, vacuum } from './library'
 import { AUDIO_EXTENSIONS } from '../shared/types'
 import { audioUrl, coverUrl } from './protocol'
@@ -110,6 +113,39 @@ export function registerIpc(win: () => BrowserWindow | null): void {
     library.set({ ...data, tracks })
   })
 
+  ipcMain.handle('lib:editTags', async (_e, id: string, patch: TagEdit) => {
+    const allowed = new Set(['title', 'artist', 'albumArtist', 'album', 'genre', 'year', 'cover'])
+    const safe: TagEdit = {}
+    for (const [k, v] of Object.entries(patch)) {
+      if (allowed.has(k)) (safe as Record<string, unknown>)[k] = v
+    }
+    const data = library.get()
+    library.set({
+      ...data,
+      edits: { ...(data.edits ?? {}), [id]: { ...(data.edits?.[id] ?? {}), ...safe } },
+      tracks: data.tracks.map((t) => (t.id === id ? { ...t, ...safe } : t))
+    })
+    await library.flush()
+    return library.get().tracks
+  })
+
+  // pochette personnalisée : image choisie → cache des covers, clé retournée
+  ipcMain.handle('cover:pick', async () => {
+    const w = win()
+    if (!w) return null
+    const res = await dialog.showOpenDialog(w, {
+      title: 'Choisir une pochette',
+      properties: ['openFile'],
+      filters: [{ name: 'Images', extensions: ['jpg', 'jpeg', 'png'] }]
+    })
+    if (res.canceled || !res.filePaths[0]) return null
+    const buf = await fs.readFile(res.filePaths[0])
+    if (buf.byteLength > 20_000_000) return null
+    const key = `${createHash('sha1').update(buf).digest('hex')}${extname(res.filePaths[0]).toLowerCase() === '.png' ? '.png' : '.jpg'}`
+    await fs.writeFile(join(paths.covers(), key), buf)
+    return key
+  })
+
   ipcMain.handle('pl:save', (_e, playlists: LibraryData['playlists']) => {
     const data = library.get()
     const valid = new Set(data.tracks.map((t) => t.id))
@@ -139,6 +175,30 @@ export function registerIpc(win: () => BrowserWindow | null): void {
     if (!/^[a-f0-9]{20}$/.test(id)) return
     if (data.byteLength > 4_000_000) return
     await fs.writeFile(join(paths.peaks(), `${id}.peaks`), Buffer.from(data))
+  })
+
+  // Décodage de secours : les codecs que Chromium ne décode pas hors lecture
+  // (ALAC…) passent par CoreAudio via afconvert → WAV float temporaire.
+  const execFileP = promisify(execFile)
+  ipcMain.handle('audio:wavFallback', async (_e, path: string): Promise<string | null> => {
+    const data = library.get()
+    const inLibrary =
+      data.files.includes(path) || data.tracks.some((t) => t.path === path) || data.roots.some((r) => path.startsWith(r))
+    if (!inLibrary) return null
+    const out = join(paths.decodeTmp(), `${trackId(path)}.wav`)
+    try {
+      await fs.access(out)
+      return out
+    } catch {
+      /* à convertir */
+    }
+    try {
+      await execFileP('afconvert', ['-f', 'WAVE', '-d', 'LEF32', path, out], { timeout: 120_000 })
+      return out
+    } catch (err) {
+      console.error('[decode] afconvert a échoué', path, err)
+      return null
+    }
   })
 
   // Cache des analyses A/B (JSON), rangé avec les pics.

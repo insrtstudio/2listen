@@ -44,7 +44,7 @@ function isAllowed(target: string): boolean {
   const data = library.get()
   const abs = resolve(target)
   if (data.files.some((f) => resolve(f) === abs)) return true
-  const allowed = [...data.roots, paths.covers(), paths.peaks()]
+  const allowed = [...data.roots, paths.covers(), paths.peaks(), paths.decodeTmp()]
   return allowed.some((root) => {
     const r = resolve(root)
     return abs === r || abs.startsWith(r.endsWith(sep) ? r : r + sep)

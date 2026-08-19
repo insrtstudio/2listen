@@ -26,6 +26,9 @@ export interface AnalysisResultMsg {
     plr: number
     spectrum: number[]
     freqs: number[]
+    bpm: number
+    keyName: string
+    camelot: string
   }
 }
 
@@ -116,6 +119,8 @@ self.onmessage = (e: MessageEvent<AnalysisJob>) => {
   const hop = Math.max(1, Math.round(fs / 10)) // 100 ms
   const nHops = Math.ceil(n / hop)
   const hopEnergy = new Float64Array(nHops) // somme des carrés pondérés K (tous canaux)
+  const HOP_B = 512 // ≈11,6 ms : résolution du détecteur de tempo
+  const beatEnergy = new Float64Array(Math.ceil(n / HOP_B) + 1)
 
   let peak = 0
   let truePeak = 0
@@ -130,6 +135,7 @@ self.onmessage = (e: MessageEvent<AnalysisJob>) => {
       const av = Math.abs(v)
       if (av > peak) peak = av
       totalEnergy += v * v
+      beatEnergy[(i / HOP_B) | 0] += v * v
 
       // crête inter-échantillons : Catmull-Rom sur (p2,p1,p0,v) à t=0.25/0.5/0.75
       if (i >= 3) {
@@ -255,13 +261,87 @@ self.onmessage = (e: MessageEvent<AnalysisJob>) => {
     spectrum.push(round1(10 * Math.log10(sum / (cnt || 1) / norm + 1e-20)))
   }
 
+  /* ————— tempo : autocorrélation du flux d'énergie ————— */
+  const hopSec = HOP_B / fs
+  const nb = beatEnergy.length
+  const flux = new Float64Array(nb)
+  for (let i = 1; i < nb; i++) flux[i] = Math.max(0, beatEnergy[i] - beatEnergy[i - 1])
+  let fluxMean = 0
+  for (let i = 0; i < nb; i++) fluxMean += flux[i]
+  fluxMean /= nb || 1
+  for (let i = 0; i < nb; i++) flux[i] = Math.max(0, flux[i] - fluxMean)
+  const minLag = Math.max(2, Math.floor(60 / (200 * hopSec))) // 200 BPM
+  const maxLag = Math.min(nb >> 1, Math.ceil(60 / (60 * hopSec))) // 60 BPM
+  let bpm = 0
+  if (maxLag > minLag + 4) {
+    const ac = new Float64Array(maxLag + 1)
+    for (let lag = minLag; lag <= maxLag; lag++) {
+      let sum = 0
+      for (let i = 0; i + lag < nb; i++) sum += flux[i] * flux[i + lag]
+      ac[lag] = sum / (nb - lag)
+    }
+    let best = minLag
+    let bestScore = -1
+    for (let lag = minLag; lag <= maxLag; lag++) {
+      const cand = 60 / (lag * hopSec)
+      // renforce les harmoniques du tempo, pénalise les extrêmes
+      let score = ac[lag]
+      if (lag * 2 <= maxLag) score += 0.5 * ac[lag * 2]
+      score *= 1 - 0.4 * Math.abs(Math.log2(cand / 120))
+      if (score > bestScore) {
+        bestScore = score
+        best = lag
+      }
+    }
+    bpm = 60 / (best * hopSec)
+    if (bpm < 75) bpm *= 2
+    if (bpm > 190) bpm /= 2
+    bpm = Math.round(bpm * 10) / 10
+  }
+
+  /* ————— tonalité : chroma depuis le spectre moyen + profils de Krumhansl ————— */
+  const chroma = new Float64Array(12)
+  for (let k = 1; k < FFT_N / 2; k++) {
+    const f = k * binHz
+    if (f < 55 || f > 5000) continue
+    const pc = ((Math.round(12 * Math.log2(f / 261.6256)) % 12) + 120) % 12
+    chroma[pc] += spectrumAcc[k] / (1 + f / 2000) // dé-emphase des aigus
+  }
+  const NOTES = ['Do', 'Do#', 'Ré', 'Ré#', 'Mi', 'Fa', 'Fa#', 'Sol', 'Sol#', 'La', 'La#', 'Si']
+  const MAJ = [6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88]
+  const MIN = [6.33, 2.68, 3.52, 5.38, 2.6, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17]
+  const CAM_MAJ = ['8B', '3B', '10B', '5B', '12B', '7B', '2B', '9B', '4B', '11B', '6B', '1B']
+  const CAM_MIN = ['5A', '12A', '7A', '2A', '9A', '4A', '11A', '6A', '1A', '8A', '3A', '10A']
+  const corr = (profile: number[], root: number): number => {
+    let s = 0
+    for (let i = 0; i < 12; i++) s += profile[(i - root + 12) % 12] * chroma[i]
+    return s
+  }
+  let keyName = '—'
+  let camelot = '—'
+  let bestK = -1
+  for (let r = 0; r < 12; r++) {
+    const cM = corr(MAJ, r)
+    const cm = corr(MIN, r)
+    if (cM > bestK) {
+      bestK = cM
+      keyName = `${NOTES[r]} majeur`
+      camelot = CAM_MAJ[r]
+    }
+    if (cm > bestK) {
+      bestK = cm
+      keyName = `${NOTES[r]} mineur`
+      camelot = CAM_MIN[r]
+    }
+  }
+
   const rms = Math.sqrt(totalEnergy / (n * nCh))
   const peakDb = round1(db(peak))
   const truePeakDb = round1(db(truePeak))
   const rmsDb = round1(db(rms))
 
   const result: AnalysisResultMsg['result'] = {
-    version: 1,
+    version: 2,
     lufsI: round1(lufsI),
     lufsSMax: round1(lufsSMax),
     lra: round1(lra),
@@ -271,7 +351,10 @@ self.onmessage = (e: MessageEvent<AnalysisJob>) => {
     crestDb: round1(peakDb - rmsDb),
     plr: round1(truePeakDb - lufsI),
     spectrum,
-    freqs
+    freqs,
+    bpm,
+    keyName,
+    camelot
   }
   ;(self as unknown as Worker).postMessage({ id, result } satisfies AnalysisResultMsg)
 }
