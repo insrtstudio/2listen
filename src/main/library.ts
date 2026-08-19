@@ -128,27 +128,32 @@ export async function scan(onProgress: (p: ScanProgress) => void): Promise<Track
   try {
     const data = library.get()
     const known = new Map(data.tracks.map((t) => [t.path, t]))
+    const excluded = new Set(data.excluded)
     const seen = new Set<string>()
     const toRead: { path: string; root: string; size: number; mtimeMs: number }[] = []
 
     let found = 0
     onProgress({ phase: 'discover', found: 0, done: 0, total: 0, current: '' })
-    for (const root of data.roots) {
-      for await (const file of walk(root)) {
-        seen.add(file)
-        found++
-        if (found % 50 === 0) onProgress({ phase: 'discover', found, done: 0, total: 0, current: file })
-        let stat
-        try {
-          stat = await fs.stat(file)
-        } catch {
-          continue
-        }
-        const prev = known.get(file)
-        if (prev && prev.size === stat.size && prev.mtime === Math.round(stat.mtimeMs)) continue
-        toRead.push({ path: file, root, size: stat.size, mtimeMs: stat.mtimeMs })
+    const consider = async (file: string, root: string): Promise<void> => {
+      if (excluded.has(file)) return
+      seen.add(file)
+      found++
+      if (found % 50 === 0) onProgress({ phase: 'discover', found, done: 0, total: 0, current: file })
+      let stat
+      try {
+        stat = await fs.stat(file)
+      } catch {
+        return
       }
+      const prev = known.get(file)
+      if (prev && prev.size === stat.size && prev.mtime === Math.round(stat.mtimeMs)) return
+      toRead.push({ path: file, root, size: stat.size, mtimeMs: stat.mtimeMs })
     }
+    for (const root of data.roots) {
+      for await (const file of walk(root)) await consider(file, root)
+    }
+    // morceaux ajoutés individuellement : leur « racine » est leur dossier parent
+    for (const file of data.files) await consider(file, join(file, '..'))
 
     let done = 0
     const total = toRead.length
@@ -190,7 +195,7 @@ export async function scan(onProgress: (p: ScanProgress) => void): Promise<Track
 export async function vacuum(): Promise<void> {
   const data = library.get()
   const covers = new Set(data.tracks.map((t) => t.cover).filter(Boolean) as string[])
-  const peaks = new Set(data.tracks.map((t) => `${t.id}.peaks`))
+  const peaks = new Set(data.tracks.flatMap((t) => [`${t.id}.peaks`, `${t.id}.anal.json`]))
   for (const [dir, keep] of [[paths.covers(), covers], [paths.peaks(), peaks]] as const) {
     let files: string[] = []
     try {

@@ -5,6 +5,9 @@ const api = {
   library: {
     get: (): Promise<LibraryData> => ipcRenderer.invoke('lib:get'),
     addRoot: (): Promise<string | null> => ipcRenderer.invoke('lib:addRoot'),
+    addFiles: (): Promise<string[]> => ipcRenderer.invoke('lib:addFiles'),
+    removeTracks: (ids: string[]): Promise<LibraryData> => ipcRenderer.invoke('lib:removeTracks', ids),
+    restoreExcluded: (): Promise<Track[]> => ipcRenderer.invoke('lib:restoreExcluded'),
     removeRoot: (root: string): Promise<LibraryData> => ipcRenderer.invoke('lib:removeRoot', root),
     scan: (): Promise<Track[]> => ipcRenderer.invoke('lib:scan'),
     onScanProgress: (cb: (p: ScanProgress) => void): (() => void) => {
@@ -32,6 +35,10 @@ const api = {
   },
   track: {
     reveal: (path: string): Promise<void> => ipcRenderer.invoke('track:reveal', path)
+  },
+  analysis: {
+    read: (id: string): Promise<string | null> => ipcRenderer.invoke('analysis:read', id),
+    write: (id: string, json: string): Promise<void> => ipcRenderer.invoke('analysis:write', id, json)
   },
   update: {
     state: (): Promise<UpdateState> => ipcRenderer.invoke('update:state'),

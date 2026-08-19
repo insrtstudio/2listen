@@ -51,6 +51,13 @@ export default function Sidebar(): React.ReactNode {
           Artistes
         </button>
 
+        <div className="mono" style={{ fontSize: 9, letterSpacing: '.12em', color: 'var(--ink-soft)', padding: '18px 14px 6px' }}>
+          OUTILS
+        </div>
+        <button className={`navitem ${view.kind === 'compare' ? 'on' : ''}`} onClick={() => setView({ kind: 'compare' })}>
+          Comparer A/B <span className="cnt">Δ</span>
+        </button>
+
         <div className="mono" style={{ fontSize: 9, letterSpacing: '.12em', color: 'var(--ink-soft)', padding: '18px 14px 6px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           PLAYLISTS
           <button

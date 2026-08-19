@@ -95,7 +95,7 @@ export default function PlayerBar(): React.ReactNode {
         style={{
           borderTop: 'var(--line-thick)',
           display: 'grid',
-          gridTemplateColumns: `${BAR}px minmax(170px, 250px) max-content 1fr 150px`,
+          gridTemplateColumns: `${BAR}px minmax(150px, 230px) max-content minmax(220px, 1fr) 132px`,
           alignItems: 'stretch',
           height: BAR,
           background: 'var(--paper)'
@@ -121,12 +121,12 @@ export default function PlayerBar(): React.ReactNode {
           {t ? (
             <>
               <div
+                title={t.title}
                 style={{
                   font: '700 15px/1.2 var(--grotesk)',
+                  whiteSpace: 'nowrap',
                   overflow: 'hidden',
-                  display: '-webkit-box',
-                  WebkitLineClamp: 2,
-                  WebkitBoxOrient: 'vertical'
+                  textOverflow: 'ellipsis'
                 }}
               >
                 {t.title}
@@ -202,42 +202,32 @@ export default function PlayerBar(): React.ReactNode {
           </div>
         </div>
 
-        {/* — waveform héros, pleine hauteur, temps incrustés — */}
-        <div style={{ position: 'relative', minWidth: 0, padding: '10px 14px 22px' }}>
-          <Waveform track={t} />
-          {t && (
-            <span
-              className="mono"
-              style={{
-                position: 'absolute',
-                right: 14,
-                top: 3,
-                fontSize: 8,
-                letterSpacing: '.08em',
-                color: 'var(--ink-soft)',
-                display: 'flex',
-                gap: 8,
-                pointerEvents: 'none'
-              }}
-            >
-              <span><i style={{ display: 'inline-block', width: 7, height: 7, background: 'var(--ink)', marginRight: 3 }} />GRAVES</span>
-              <span><i style={{ display: 'inline-block', width: 7, height: 7, background: 'var(--ink-soft)', marginRight: 3 }} />MÉDIUMS</span>
-              <span><i style={{ display: 'inline-block', width: 7, height: 7, background: 'var(--accent)', marginRight: 3 }} />AIGUS</span>
-              <span><i style={{ display: 'inline-block', width: 2, height: 8, background: 'var(--accent)', marginRight: 3 }} />TRANSIT.</span>
+        {/* — waveform héros : légende, canvas et temps en flux, rien ne déborde — */}
+        <div style={{ minWidth: 0, padding: '5px 14px 6px', display: 'flex', flexDirection: 'column' }}>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', height: 12, flex: 'none', overflow: 'hidden' }}>
+            {t && (
+              <span
+                className="mono wf-legend"
+                style={{ fontSize: 8, letterSpacing: '.08em', color: 'var(--ink-soft)', display: 'flex', gap: 8, whiteSpace: 'nowrap' }}
+              >
+                <span><i style={{ display: 'inline-block', width: 7, height: 7, background: 'var(--ink)', marginRight: 3 }} />GRAVES</span>
+                <span><i style={{ display: 'inline-block', width: 7, height: 7, background: 'var(--ink-soft)', marginRight: 3 }} />MÉDIUMS</span>
+                <span><i style={{ display: 'inline-block', width: 7, height: 7, background: 'var(--accent)', marginRight: 3 }} />AIGUS</span>
+                <span><i style={{ display: 'inline-block', width: 2, height: 8, background: 'var(--accent)', marginRight: 3 }} />TRANSIT.</span>
+              </span>
+            )}
+          </div>
+          <div style={{ flex: 1, minHeight: 0 }}>
+            <Waveform track={t} />
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', height: 14, flex: 'none', alignItems: 'flex-end' }}>
+            <span className="mono" style={{ fontSize: 10 }}>
+              <TimeReadout side="cur" />
             </span>
-          )}
-          <span
-            className="mono"
-            style={{ position: 'absolute', left: 14, bottom: 5, fontSize: 10, color: 'var(--ink)' }}
-          >
-            <TimeReadout side="cur" />
-          </span>
-          <span
-            className="mono"
-            style={{ position: 'absolute', right: 14, bottom: 5, fontSize: 10, color: 'var(--ink-soft)' }}
-          >
-            <TimeReadout side="total" />
-          </span>
+            <span className="mono" style={{ fontSize: 10, color: 'var(--ink-soft)' }}>
+              <TimeReadout side="total" />
+            </span>
+          </div>
         </div>
 
         {/* — volume compact — */}

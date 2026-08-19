@@ -38,10 +38,13 @@ const MIME: Record<string, string> = {
 
 const mimeFor = (path: string): string => MIME[extname(path).slice(1).toLowerCase()] ?? 'application/octet-stream'
 
-/** Un fichier n'est servi que s'il vit sous une racine de bibliothèque ou dans nos caches. */
+/** Un fichier n'est servi que s'il vit sous une racine, est un morceau ajouté
+ *  individuellement, ou appartient à nos caches. */
 function isAllowed(target: string): boolean {
-  const allowed = [...library.get().roots, paths.covers(), paths.peaks()]
+  const data = library.get()
   const abs = resolve(target)
+  if (data.files.some((f) => resolve(f) === abs)) return true
+  const allowed = [...data.roots, paths.covers(), paths.peaks()]
   return allowed.some((root) => {
     const r = resolve(root)
     return abs === r || abs.startsWith(r.endsWith(sep) ? r : r + sep)

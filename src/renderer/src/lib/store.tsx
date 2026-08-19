@@ -12,10 +12,12 @@ export type View =
   | { kind: 'album'; artist: string; album: string }
   | { kind: 'artist'; artist: string }
   | { kind: 'playlist'; id: string }
+  | { kind: 'compare' }
 
 interface Store {
   tracks: Track[]
   roots: string[]
+  excludedCount: number
   playlists: Playlist[]
   scan: ScanProgress
   settings: Settings
@@ -26,6 +28,9 @@ interface Store {
   setView: (v: View) => void
   setSearch: (s: string) => void
   addRoot: () => Promise<void>
+  addFiles: () => Promise<void>
+  removeTracks: (ids: string[]) => Promise<void>
+  restoreExcluded: () => Promise<void>
   removeRoot: (root: string) => Promise<void>
   rescan: () => Promise<void>
   patchSettings: (patch: Partial<Settings>) => void
@@ -47,11 +52,13 @@ const newId = (): string => crypto.randomUUID().replace(/-/g, '').slice(0, 20)
 export function StoreProvider({ children }: { children: ReactNode }): ReactNode {
   const [tracks, setTracks] = useState<Track[]>([])
   const [roots, setRoots] = useState<string[]>([])
+  const [excludedCount, setExcludedCount] = useState(0)
   const [playlists, setPlaylists] = useState<Playlist[]>([])
   const [scan, setScan] = useState<ScanProgress>(idleScan)
   const [settings, setSettings] = useState<Settings>({
     volume: 0.85, repeat: 'off', shuffle: false, theme: 'light',
-    lastTrackId: null, matchSampleRate: true, gapless: true
+    lastTrackId: null, matchSampleRate: true, gapless: true,
+    compareA: null, compareB: null
   })
   const [update, setUpdate] = useState<UpdateState>({ status: 'idle' })
   const [view, setView] = useState<View>({ kind: 'tracks' })
@@ -69,6 +76,7 @@ export function StoreProvider({ children }: { children: ReactNode }): ReactNode 
       ])
       setTracks(lib.tracks)
       setRoots(lib.roots)
+      setExcludedCount(lib.excluded?.length ?? 0)
       setPlaylists(lib.playlists)
       setSettings(st)
       setUpdate(up)
@@ -78,7 +86,7 @@ export function StoreProvider({ children }: { children: ReactNode }): ReactNode 
       player.setShuffle(st.shuffle)
       loaded.current = true
       // Un rescan silencieux au lancement récupère les fichiers ajoutés hors app.
-      if (lib.roots.length > 0) {
+      if (lib.roots.length > 0 || (lib.files?.length ?? 0) > 0) {
         const fresh = await window.tl.library.scan()
         setTracks(fresh)
       }
@@ -122,6 +130,26 @@ export function StoreProvider({ children }: { children: ReactNode }): ReactNode 
     setRoots((r) => (r.includes(root) ? r : [...r, root]))
     const fresh = await window.tl.library.scan()
     setTracks(fresh)
+  }, [])
+
+  const addFiles = useCallback(async () => {
+    const added = await window.tl.library.addFiles()
+    if (added.length === 0) return
+    const fresh = await window.tl.library.scan()
+    setTracks(fresh)
+  }, [])
+
+  const removeTracks = useCallback(async (ids: string[]) => {
+    const lib = await window.tl.library.removeTracks(ids)
+    setTracks(lib.tracks)
+    setPlaylists(lib.playlists)
+    setExcludedCount(lib.excluded.length)
+  }, [])
+
+  const restoreExcluded = useCallback(async () => {
+    const fresh = await window.tl.library.restoreExcluded()
+    setTracks(fresh)
+    setExcludedCount(0)
   }, [])
 
   const removeRoot = useCallback(async (root: string) => {
@@ -184,12 +212,12 @@ export function StoreProvider({ children }: { children: ReactNode }): ReactNode 
   }, [])
 
   const value = useMemo<Store>(() => ({
-    tracks, roots, playlists, scan, settings, update, view, search, version,
-    setView, setSearch, addRoot, removeRoot, rescan, patchSettings,
+    tracks, roots, excludedCount, playlists, scan, settings, update, view, search, version,
+    setView, setSearch, addRoot, addFiles, removeTracks, restoreExcluded, removeRoot, rescan, patchSettings,
     createPlaylist, renamePlaylist, deletePlaylist, addToPlaylist,
     removeFromPlaylist, movePlaylistTrack, setRating
-  }), [tracks, roots, playlists, scan, settings, update, view, search, version,
-    addRoot, removeRoot, rescan, patchSettings, createPlaylist, renamePlaylist,
+  }), [tracks, roots, excludedCount, playlists, scan, settings, update, view, search, version,
+    addRoot, addFiles, removeTracks, restoreExcluded, removeRoot, rescan, patchSettings, createPlaylist, renamePlaylist,
     deletePlaylist, addToPlaylist, removeFromPlaylist, movePlaylistTrack, setRating])
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>

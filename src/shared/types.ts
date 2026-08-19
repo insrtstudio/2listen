@@ -47,6 +47,10 @@ export interface Playlist {
 export interface LibraryData {
   version: number
   roots: string[]
+  /** Morceaux ajoutés individuellement (hors dossiers surveillés). */
+  files: string[]
+  /** Chemins retirés de la bibliothèque (ignorés au scan). */
+  excluded: string[]
   tracks: Track[]
   playlists: Playlist[]
 }
@@ -59,6 +63,31 @@ export interface ScanProgress {
   current: string
 }
 
+/** Résultat d'analyse audio complète d'une piste (outil A/B). */
+export interface AnalysisData {
+  version: number
+  /** Loudness intégrée (LUFS, ITU-R BS.1770, gating). */
+  lufsI: number
+  /** Max de loudness court terme 3 s (LUFS). */
+  lufsSMax: number
+  /** Plage de loudness EBU R128 (LU). */
+  lra: number
+  /** Crête échantillon (dBFS). */
+  peakDb: number
+  /** Crête inter-échantillons estimée (dBTP, interp. Catmull-Rom 4x). */
+  truePeakDb: number
+  /** RMS global (dBFS). */
+  rmsDb: number
+  /** Facteur de crête peak−RMS (dB) : plus il est bas, plus c'est compressé. */
+  crestDb: number
+  /** Peak-to-Loudness Ratio : truePeak − lufsI (dB). */
+  plr: number
+  /** Spectre moyen (dB), points log-espacés de 20 Hz à 20 kHz. */
+  spectrum: number[]
+  /** Fréquences des points du spectre (Hz). */
+  freqs: number[]
+}
+
 export interface Settings {
   volume: number
   repeat: 'off' | 'all' | 'one'
@@ -69,6 +98,9 @@ export interface Settings {
   matchSampleRate: boolean
   /** Préchargement de la piste suivante pour un enchaînement sans blanc. */
   gapless: boolean
+  /** Outil A/B : pistes mémorisées. */
+  compareA: TrackId | null
+  compareB: TrackId | null
 }
 
 export interface UpdateState {

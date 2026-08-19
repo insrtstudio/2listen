@@ -20,10 +20,12 @@ export const defaultSettings: Settings = {
   theme: 'light',
   lastTrackId: null,
   matchSampleRate: true,
-  gapless: true
+  gapless: true,
+  compareA: null,
+  compareB: null
 }
 
-const emptyLibrary: LibraryData = { version: DATA_VERSION, roots: [], tracks: [], playlists: [] }
+const emptyLibrary: LibraryData = { version: DATA_VERSION, roots: [], files: [], excluded: [], tracks: [], playlists: [] }
 
 /**
  * Écriture atomique et débattue : la bibliothèque tient en mémoire, le disque

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useStore } from '@/lib/store'
 import PlayerBar from './PlayerBar'
 import Sidebar from './Sidebar'
+import CompareView from './CompareView'
 import { AlbumView, AlbumsView, ArtistView, ArtistsView, PlaylistView, TracksView } from './Views'
 
 export default function App(): React.ReactNode {
@@ -27,6 +28,8 @@ export default function App(): React.ReactNode {
               <ArtistsView />
             ) : view.kind === 'artist' ? (
               <ArtistView artist={view.artist} />
+            ) : view.kind === 'compare' ? (
+              <CompareView />
             ) : (
               <PlaylistView id={view.id} />
             )}
@@ -39,7 +42,7 @@ export default function App(): React.ReactNode {
 }
 
 function TopBar(): React.ReactNode {
-  const { search, setSearch, addRoot, rescan, scan, settings, patchSettings, roots, removeRoot } = useStore()
+  const { search, setSearch, addRoot, addFiles, rescan, scan, settings, patchSettings, roots, removeRoot, excludedCount, restoreExcluded } = useStore()
   const [showRoots, setShowRoots] = useState(false)
   const inputRef = useRef<HTMLInputElement | null>(null)
   const scanning = scan.phase === 'discover' || scan.phase === 'read'
@@ -72,8 +75,11 @@ function TopBar(): React.ReactNode {
           />
         </div>
         <div style={{ flex: 1 }} />
+        <button className="blk acc tap no-drag" onClick={() => void addFiles()}>
+          + Morceaux
+        </button>
         <button className="blk tap no-drag" onClick={() => setShowRoots((v) => !v)}>
-          Dossiers
+          Bibliothèque
         </button>
         <button className="blk tap no-drag" onClick={() => void rescan()} disabled={scanning}>
           {scanning ? 'Scan…' : 'Rescanner'}
@@ -116,12 +122,30 @@ function TopBar(): React.ReactNode {
           )}
           <button
             onClick={() => {
+              void addFiles()
+              setShowRoots(false)
+            }}
+          >
+            + Ajouter des morceaux…
+          </button>
+          <button
+            onClick={() => {
               void addRoot()
               setShowRoots(false)
             }}
           >
             + Ajouter un dossier…
           </button>
+          {excludedCount > 0 && (
+            <button
+              onClick={() => {
+                void restoreExcluded()
+                setShowRoots(false)
+              }}
+            >
+              ↩ Restaurer {excludedCount} morceau{excludedCount > 1 ? 'x' : ''} retiré{excludedCount > 1 ? 's' : ''}
+            </button>
+          )}
           <button onClick={() => setShowRoots(false)}>Fermer</button>
         </div>
       )}
@@ -130,7 +154,7 @@ function TopBar(): React.ReactNode {
 }
 
 function EmptyState(): React.ReactNode {
-  const { addRoot } = useStore()
+  const { addRoot, addFiles } = useStore()
   return (
     <div style={{ flex: 1, display: 'grid', placeItems: 'center' }}>
       <div style={{ textAlign: 'center', maxWidth: 520, padding: 24 }}>
@@ -144,9 +168,14 @@ function EmptyState(): React.ReactNode {
           FLAC, ALAC, WAV, AIFF — lus tels quels, bit par bit. Ajoutez un dossier, 2Listen indexe tout, pochettes et
           formes d'onde comprises.
         </p>
-        <button className="blk acc tap" style={{ fontSize: 14, padding: '14px 26px' }} onClick={() => void addRoot()}>
-          + Ajouter un dossier de musique
-        </button>
+        <div style={{ display: 'flex', gap: 10, justifyContent: 'center' }}>
+          <button className="blk acc tap" style={{ fontSize: 14, padding: '14px 26px' }} onClick={() => void addFiles()}>
+            + Ajouter des morceaux
+          </button>
+          <button className="blk tap" style={{ fontSize: 14, padding: '14px 26px' }} onClick={() => void addRoot()}>
+            + Un dossier entier
+          </button>
+        </div>
       </div>
     </div>
   )

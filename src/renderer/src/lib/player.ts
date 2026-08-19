@@ -33,6 +33,8 @@ class Player {
   track: Track | null = null
   playing = false
   stalled = false
+  /** Atténuation A/B (alignement de loudness) : multiplicateur ≤ 1. */
+  private gainMult = 1
   private stallTimer: ReturnType<typeof setTimeout> | null = null
   repeat: 'off' | 'all' | 'one' = 'off'
   shuffle = false
@@ -141,9 +143,40 @@ class Player {
 
   /** Lance `queue[index]` et mémorise la file (une vue = une file). */
   async playQueue(queue: Track[], index: number): Promise<void> {
+    this.gainMult = 1
     this.queue = queue
     this.rebuildOrder(index)
     await this.load(queue[index], true)
+  }
+
+  /**
+   * Écoute A/B : joue une piste seule, à une position donnée (fraction 0–1),
+   * avec une atténuation en dB pour aligner la loudness des deux morceaux.
+   */
+  async playSolo(track: Track, fraction = 0, gainDb = 0): Promise<void> {
+    this.gainMult = Math.min(1, Math.pow(10, gainDb / 20))
+    this.queue = [track]
+    this.rebuildOrder(0)
+    await this.load(track, true)
+    const el = this.active
+    const target = Math.max(0, Math.min(0.999, fraction)) * (track.duration || 0)
+    if (target > 0) {
+      if (el.readyState >= 1) {
+        el.currentTime = target
+      } else {
+        const once = (): void => {
+          el.currentTime = target
+          el.removeEventListener('loadedmetadata', once)
+        }
+        el.addEventListener('loadedmetadata', once)
+      }
+    }
+  }
+
+  /** Fraction de lecture courante (0–1). */
+  fraction(): number {
+    const d = this.active.duration || this.track?.duration || 0
+    return d > 0 ? this.active.currentTime / d : 0
   }
 
   private async load(track: Track, autoplay: boolean): Promise<void> {
@@ -160,7 +193,7 @@ class Player {
       this.active.src = url
     }
     this.preloadedFor = null
-    this.active.volume = this.volume
+    this.active.volume = Math.min(1, this.volume * this.gainMult)
     this.active.currentTime = 0
     if (autoplay) void this.active.play().catch(() => {})
     this.emit()
@@ -188,7 +221,7 @@ class Player {
     const other = this.active === this.a ? this.b : this.a
     if (this.preloadedFor === next.id) return
     other.src = await window.tl.url.audio(next.path)
-    other.volume = this.volume
+    other.volume = Math.min(1, this.volume * this.gainMult)
     this.preloadedFor = next.id
   }
 
@@ -239,8 +272,8 @@ class Player {
 
   setVolume(v: number): void {
     this.volume = Math.max(0, Math.min(1, v))
-    this.a.volume = this.volume
-    this.b.volume = this.volume
+    this.a.volume = Math.min(1, this.volume * this.gainMult)
+    this.b.volume = Math.min(1, this.volume * this.gainMult)
     this.emit()
   }
 

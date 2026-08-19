@@ -42,7 +42,7 @@ export function sortTracks(tracks: Track[], key: SortKey, dir: 1 | -1): Track[] 
  * 50 000 pistes défilent sans effort.
  */
 export default function TrackTable({ tracks, onReorder, onRemove, sort, sortDir, onSort }: Props): React.ReactNode {
-  const { setRating, playlists, addToPlaylist, createPlaylist } = useStore()
+  const { setRating, playlists, addToPlaylist, createPlaylist, removeTracks, patchSettings, setView } = useStore()
   const snap = useSyncExternalStore(player.subscribe, player.getSnapshot)
   const scrollRef = useRef<HTMLDivElement | null>(null)
   const [range, setRange] = useState<[number, number]>([0, 60])
@@ -275,6 +275,29 @@ export default function TrackTable({ tracks, onReorder, onRemove, sort, sortDir,
           >
             + Nouvelle playlist…
           </button>
+          <div className="sect">Outil A/B</div>
+          <div style={{ display: 'flex', borderBottom: 'var(--line)' }}>
+            <button
+              style={{ flex: 1, borderBottom: 'none', borderRight: 'var(--line)' }}
+              onClick={() => {
+                patchSettings({ compareA: menu.ids[0] })
+                setView({ kind: 'compare' })
+                setMenu(null)
+              }}
+            >
+              → Mix (A)
+            </button>
+            <button
+              style={{ flex: 1, borderBottom: 'none' }}
+              onClick={() => {
+                patchSettings({ compareB: menu.ids[0] })
+                setView({ kind: 'compare' })
+                setMenu(null)
+              }}
+            >
+              → Référence (B)
+            </button>
+          </div>
           <div className="sect">Note</div>
           <div style={{ display: 'flex', borderBottom: 'var(--line)' }}>
             {[1, 2, 3, 4, 5].map((n) => (
@@ -308,6 +331,15 @@ export default function TrackTable({ tracks, onReorder, onRemove, sort, sortDir,
             }}
           >
             Afficher dans le Finder
+          </button>
+          <button
+            onClick={() => {
+              void removeTracks(menu.ids)
+              setMenu(null)
+            }}
+            style={{ color: 'var(--accent)' }}
+          >
+            ✕ Retirer de la bibliothèque ({menu.ids.length})
           </button>
         </div>
       )}
