@@ -235,8 +235,8 @@ function SpectrumChart({ a, b, aligned }: { a: AnalysisData; b: AnalysisData; al
   }, [a, b, aligned])
 
   return (
-    <div ref={wrapRef} style={{ flex: 1, minHeight: 220 }}>
-      <canvas ref={canvasRef} style={{ display: 'block' }} />
+    <div ref={wrapRef} style={{ flex: 1, minHeight: 220, position: 'relative', overflow: 'hidden' }}>
+      <canvas ref={canvasRef} width={0} height={0} style={{ position: 'absolute', inset: 0, display: 'block' }} />
     </div>
   )
 }

@@ -96,8 +96,11 @@ export default function PlayerBar(): React.ReactNode {
           borderTop: 'var(--line-thick)',
           display: 'grid',
           gridTemplateColumns: `${BAR}px minmax(150px, 230px) max-content minmax(220px, 1fr) 132px`,
+          // 100% + overflow hidden : aucun contenu ne peut faire déborder la barre
+          gridTemplateRows: '100%',
           alignItems: 'stretch',
           height: BAR,
+          overflow: 'hidden',
           background: 'var(--paper)'
         }}
       >
@@ -203,7 +206,7 @@ export default function PlayerBar(): React.ReactNode {
         </div>
 
         {/* — waveform héros : légende, canvas et temps en flux, rien ne déborde — */}
-        <div style={{ minWidth: 0, padding: '5px 14px 6px', display: 'flex', flexDirection: 'column' }}>
+        <div style={{ minWidth: 0, minHeight: 0, padding: '5px 14px 6px', display: 'flex', flexDirection: 'column' }}>
           <div style={{ display: 'flex', justifyContent: 'flex-end', height: 12, flex: 'none', overflow: 'hidden' }}>
             {t && (
               <span

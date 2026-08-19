@@ -236,9 +236,11 @@ export default function Waveform({ track }: { track: Track | null }): React.Reac
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
       onPointerLeave={onPointerLeave}
-      style={{ position: 'relative', height: '100%', cursor: track ? 'crosshair' : 'default', touchAction: 'none' }}
+      style={{ position: 'relative', height: '100%', overflow: 'hidden', cursor: track ? 'crosshair' : 'default', touchAction: 'none' }}
     >
-      <canvas ref={canvasRef} style={{ display: 'block' }} />
+      {/* en absolu : la taille par défaut d'un canvas (300×150) ne doit jamais
+          gonfler la hauteur de la barre de lecture */}
+      <canvas ref={canvasRef} width={0} height={0} style={{ position: 'absolute', inset: 0, display: 'block' }} />
       {loading && track && (
         <span
           className="mono"
