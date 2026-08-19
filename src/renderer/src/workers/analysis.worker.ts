@@ -29,6 +29,7 @@ export interface AnalysisResultMsg {
     bpm: number
     keyName: string
     camelot: string
+    beatPhase: number
   }
 }
 
@@ -299,6 +300,26 @@ self.onmessage = (e: MessageEvent<AnalysisJob>) => {
     bpm = Math.round(bpm * 10) / 10
   }
 
+  /* ————— phase de la grille : peigne au pas du battement ————— */
+  let beatPhase = 0
+  if (bpm > 0) {
+    const period = 60 / bpm / hopSec // battement en hops (fractionnaire)
+    const span = Math.min(nb, Math.floor(90 / hopSec)) // 90 premières secondes
+    let bestO = 0
+    let bestS = -1
+    const steps = Math.max(8, Math.round(period))
+    for (let s2 = 0; s2 < steps; s2++) {
+      const o = (s2 / steps) * period
+      let sum = 0
+      for (let t = o; t < span; t += period) sum += flux[Math.round(t)] ?? 0
+      if (sum > bestS) {
+        bestS = sum
+        bestO = o
+      }
+    }
+    beatPhase = Math.round(bestO * hopSec * 1000) / 1000
+  }
+
   /* ————— tonalité : chroma depuis le spectre moyen + profils de Krumhansl ————— */
   const chroma = new Float64Array(12)
   for (let k = 1; k < FFT_N / 2; k++) {
@@ -341,7 +362,7 @@ self.onmessage = (e: MessageEvent<AnalysisJob>) => {
   const rmsDb = round1(db(rms))
 
   const result: AnalysisResultMsg['result'] = {
-    version: 2,
+    version: 3,
     lufsI: round1(lufsI),
     lufsSMax: round1(lufsSMax),
     lra: round1(lra),
@@ -354,7 +375,8 @@ self.onmessage = (e: MessageEvent<AnalysisJob>) => {
     freqs,
     bpm,
     keyName,
-    camelot
+    camelot,
+    beatPhase
   }
   ;(self as unknown as Worker).postMessage({ id, result } satisfies AnalysisResultMsg)
 }

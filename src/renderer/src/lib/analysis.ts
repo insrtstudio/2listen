@@ -3,7 +3,7 @@ import { decodeTrack } from './decode'
 import type { AnalysisResultMsg } from '../workers/analysis.worker'
 import AnalysisWorker from '../workers/analysis.worker?worker'
 
-const ANALYSIS_VERSION = 2
+const ANALYSIS_VERSION = 3
 
 const memory = new Map<string, AnalysisData>()
 const pending = new Map<string, Promise<AnalysisData | null>>()

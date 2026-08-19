@@ -1,6 +1,6 @@
-import { useState, useSyncExternalStore } from 'react'
+import { useEffect, useState, useSyncExternalStore } from 'react'
 import { fmtQuality } from '@/lib/format'
-import { beatDelta, deckA, deckB, getCrossfade, setCrossfade, syncBoth, type Deck } from '@/lib/decks'
+import { beatDelta, deckA, deckB, getBeatLock, getCrossfade, getPhaseErrMs, onLock, setBeatLock, setCrossfade, syncBoth, type Deck } from '@/lib/decks'
 import { useStore } from '@/lib/store'
 import TrackPicker from './TrackPicker'
 import Waveform from './Waveform'
@@ -151,6 +151,12 @@ function DeckPanel({ deck, accent }: { deck: Deck; accent: boolean }): React.Rea
 
 export default function MixView(): React.ReactNode {
   const [xf, setXf] = useState(getCrossfade())
+  const [lock, setLock] = useState(getBeatLock())
+  const [phaseErr, setPhaseErr] = useState(0)
+  useEffect(() => onLock(() => {
+    setLock(getBeatLock())
+    setPhaseErr(getPhaseErrMs())
+  }), [])
   const snapA = useSyncExternalStore(deckA.subscribe, deckA.getSnapshot)
   const snapB = useSyncExternalStore(deckB.subscribe, deckB.getSnapshot)
 
@@ -222,6 +228,28 @@ export default function MixView(): React.ReactNode {
           >
             SYNC ⇄
           </button>
+          <button
+            className="mono tap"
+            onClick={() => setBeatLock(!lock)}
+            disabled={!snapA.analysis?.bpm || !snapB.analysis?.bpm}
+            title="Calage automatique continu : la platine secondaire reste verrouillée sur la grille de l'autre"
+            style={{
+              border: '2px solid var(--ink)',
+              background: lock ? 'var(--accent)' : 'transparent',
+              color: lock ? '#111' : 'inherit',
+              font: '700 11px var(--grotesk)',
+              letterSpacing: '.08em',
+              padding: '10px 12px',
+              flex: 'none'
+            }}
+          >
+            LOCK {lock ? '●' : '○'}
+          </button>
+          {lock && (
+            <span className="mono" style={{ fontSize: 9, color: Math.abs(phaseErr) < 15 ? 'var(--accent)' : 'var(--ink-soft)', flex: 'none', width: 58 }}>
+              {Math.abs(phaseErr) < 15 ? 'EN GRILLE ✓' : `${phaseErr > 0 ? '+' : ''}${phaseErr} ms`}
+            </span>
+          )}
           <span style={{ font: '700 15px var(--grotesk)', color: 'var(--accent)' }}>A</span>
           <input
             type="range"

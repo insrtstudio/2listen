@@ -97,6 +97,8 @@ export interface AnalysisData {
   keyName: string
   /** Notation Camelot (ex. 8A). */
   camelot: string
+  /** Position du premier battement (secondes) — grille : beatPhase + k·60/bpm. */
+  beatPhase: number
 }
 
 export interface Settings {

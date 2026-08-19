@@ -194,6 +194,117 @@ export function getCrossfade(): number {
 
 setCrossfade(0.5)
 
+/** Grille commune : diviseurs tels que les deux platines partagent le battement lent. */
+function commonGrid(a: Deck, b: Deck): { divA: number; divB: number } | null {
+  const ea = a.effectiveBpm()
+  const eb = b.effectiveBpm()
+  if (!ea || !eb) return null
+  const ratio = ea / eb
+  if (ratio > 1.5) return { divA: 2, divB: 1 } // A double-time : caler sur le temps de B
+  if (ratio < 0.66) return { divA: 1, divB: 2 }
+  return { divA: 1, divB: 1 }
+}
+
+/** Position fractionnaire dans le battement (0–1) sur la grille divisée. */
+function beatFrac(deck: Deck, div: number): number | null {
+  const an = deck.analysis
+  if (!an || !an.bpm) return null
+  const beatSec = (60 / an.bpm) * div
+  const t = deck.audio.currentTime - an.beatPhase
+  return ((t / beatSec) % 1 + 1) % 1
+}
+
+/**
+ * Calage de phase : décale `slave` (currentTime) pour que ses battements
+ * tombent sur ceux de `master`, vers le battement le plus proche.
+ */
+export function phaseAlign(master: Deck, slave: Deck): void {
+  const grid = commonGrid(master, slave)
+  if (!grid) return
+  const [divM, divS] = master === deckA ? [grid.divA, grid.divB] : [grid.divB, grid.divA]
+  const fm = beatFrac(master, divM)
+  const fs = beatFrac(slave, divS)
+  if (fm === null || fs === null || !slave.analysis?.bpm) return
+  const beatSecS = (60 / slave.analysis.bpm) * divS
+  let diff = fm - fs
+  if (diff > 0.5) diff -= 1
+  if (diff < -0.5) diff += 1
+  slave.audio.currentTime = Math.max(0, slave.audio.currentTime + diff * beatSecS)
+}
+
+/** Le « maître » est la platine la plus présente au crossfader (B si égalité et A muette). */
+export function masterSlave(): [Deck, Deck] {
+  return crossfade <= 0.5 ? [deckA, deckB] : [deckB, deckA]
+}
+
+/* ————— LOCK : recalage automatique continu ————— */
+let lockOn = false
+let lockTimer: ReturnType<typeof setInterval> | null = null
+let lastPhaseErrMs = 0
+const lockSubs = new Set<() => void>()
+
+export function onLock(cb: () => void): () => void {
+  lockSubs.add(cb)
+  return () => lockSubs.delete(cb)
+}
+
+export function getBeatLock(): boolean {
+  return lockOn
+}
+
+export function getPhaseErrMs(): number {
+  return lastPhaseErrMs
+}
+
+export function setBeatLock(on: boolean): void {
+  lockOn = on
+  if (lockTimer) {
+    clearInterval(lockTimer)
+    lockTimer = null
+  }
+  if (on) {
+    let settle = 0 // ticks à ignorer après un saut (latence de seek)
+    lockTimer = setInterval(() => {
+      const [master, slave] = masterSlave()
+      if (!master.playing || !slave.playing) return
+      if (settle > 0) {
+        settle--
+        return
+      }
+      const grid = commonGrid(master, slave)
+      if (!grid) return
+      const [divM, divS] = master === deckA ? [grid.divA, grid.divB] : [grid.divB, grid.divA]
+      const fm = beatFrac(master, divM)
+      const fs = beatFrac(slave, divS)
+      if (fm === null || fs === null || !slave.analysis?.bpm) return
+      const beatSecS = (60 / slave.analysis.bpm) * divS
+      let diff = fm - fs
+      if (diff > 0.5) diff -= 1
+      if (diff < -0.5) diff += 1
+      const errSec = diff * beatSecS
+      lastPhaseErrMs = Math.round(errSec * 1000)
+      if (Math.abs(errSec) > 0.15) {
+        // très loin (départ, seek manuel) : un seul recalage franc puis on
+        // laisse le seek se poser avant de re-mesurer
+        slave.audio.currentTime = Math.max(0, slave.audio.currentTime + errSec)
+        slave.audio.playbackRate = slave.rate
+        settle = 2
+      } else {
+        // rattrapage par micro-pitch uniquement : aucun seek, aucun glitch
+        const nudge = Math.max(-0.02, Math.min(0.02, errSec * 1.5))
+        slave.audio.playbackRate = slave.rate * (1 + nudge)
+      }
+      for (const cb of lockSubs) cb()
+    }, 600)
+  } else {
+    // restaure les pitchs nominaux
+    deckA.audio.playbackRate = deckA.rate
+    deckB.audio.playbackRate = deckB.rate
+    lastPhaseErrMs = 0
+  }
+  for (const cb of lockSubs) cb()
+}
+
 /**
  * SYNC bilatéral : les deux platines convergent vers un tempo commun
  * (moyenne géométrique) — chaque pitch bouge deux fois moins qu'un esclavage
@@ -212,6 +323,9 @@ export function syncBoth(a: Deck, b: Deck): void {
   a.setRate(target / bpmA)
   // si la borne ±8 % a tronqué A, B rejoint le tempo réellement atteint
   b.setRate((bpmA * a.rate) / tB)
+  // calage de phase immédiat : la platine la moins présente rejoint l'autre
+  const [master, slave] = masterSlave()
+  phaseAlign(master, slave)
 }
 
 /** Écart de battement résiduel entre les platines, en tenant compte du 2:1. */
