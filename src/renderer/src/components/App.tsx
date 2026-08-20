@@ -12,40 +12,41 @@ export default function App(): React.ReactNode {
   const [dropping, setDropping] = useState(false)
 
   // dépôt de fichiers audio n'importe où : ajout à la bibliothèque.
-  // Les zones A/B (pickers) stoppent la propagation pour gérer leur propre dépôt.
+  // La bannière vit tant que des dragover arrivent et s'éteint 150 ms après
+  // le dernier — dragenter/dragleave sont trop peu fiables (sortie de
+  // fenêtre, Échap, drop hors app) et laissaient la bannière coincée.
   useEffect(() => {
-    let depth = 0
+    let hideTimer: ReturnType<typeof setTimeout> | null = null
     const hasFiles = (e: DragEvent): boolean => [...(e.dataTransfer?.types ?? [])].includes('Files')
-    const onEnter = (e: DragEvent): void => {
-      if (!hasFiles(e)) return
-      depth++
-      setDropping(true)
-    }
-    const onLeave = (e: DragEvent): void => {
-      if (!hasFiles(e)) return
-      depth = Math.max(0, depth - 1)
-      if (depth === 0) setDropping(false)
+    const hide = (): void => {
+      if (hideTimer) clearTimeout(hideTimer)
+      hideTimer = null
+      setDropping(false)
     }
     const onOver = (e: DragEvent): void => {
-      if (hasFiles(e)) e.preventDefault()
+      if (!hasFiles(e)) return
+      e.preventDefault()
+      setDropping(true)
+      if (hideTimer) clearTimeout(hideTimer)
+      hideTimer = setTimeout(() => setDropping(false), 150)
     }
     const onDrop = (e: DragEvent): void => {
-      depth = 0
-      setDropping(false)
+      hide()
       if (!hasFiles(e)) return
       e.preventDefault()
       const paths = [...(e.dataTransfer?.files ?? [])].map((f) => window.tl.dnd.path(f)).filter(Boolean)
       void addPaths(paths)
     }
-    window.addEventListener('dragenter', onEnter)
-    window.addEventListener('dragleave', onLeave)
     window.addEventListener('dragover', onOver)
     window.addEventListener('drop', onDrop)
+    window.addEventListener('dragend', hide)
+    window.addEventListener('blur', hide)
     return () => {
-      window.removeEventListener('dragenter', onEnter)
-      window.removeEventListener('dragleave', onLeave)
       window.removeEventListener('dragover', onOver)
       window.removeEventListener('drop', onDrop)
+      window.removeEventListener('dragend', hide)
+      window.removeEventListener('blur', hide)
+      if (hideTimer) clearTimeout(hideTimer)
     }
   }, [addPaths])
 
