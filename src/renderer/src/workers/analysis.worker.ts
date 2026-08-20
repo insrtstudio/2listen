@@ -265,8 +265,13 @@ self.onmessage = (e: MessageEvent<AnalysisJob>) => {
   /* ————— tempo : autocorrélation du flux d'énergie ————— */
   const hopSec = HOP_B / fs
   const nb = beatEnergy.length
+  // flux en log : les attaques ressortent autant dans les passages doux que
+  // forts — indispensable sur de la vraie musique (pas seulement des kicks)
   const flux = new Float64Array(nb)
-  for (let i = 1; i < nb; i++) flux[i] = Math.max(0, beatEnergy[i] - beatEnergy[i - 1])
+  for (let i = 1; i < nb; i++) {
+    const d = Math.log(beatEnergy[i] + 1e-9) - Math.log(beatEnergy[i - 1] + 1e-9)
+    flux[i] = d > 0 ? d : 0
+  }
   let fluxMean = 0
   for (let i = 0; i < nb; i++) fluxMean += flux[i]
   fluxMean /= nb || 1
@@ -300,24 +305,34 @@ self.onmessage = (e: MessageEvent<AnalysisJob>) => {
     bpm = Math.round(bpm * 10) / 10
   }
 
-  /* ————— phase de la grille : peigne au pas du battement ————— */
+  /* ————— phase de la grille : peigne sur la section centrale (l'intro
+     d'un morceau réel n'a souvent pas de batterie), affinage parabolique ————— */
   let beatPhase = 0
   if (bpm > 0) {
     const period = 60 / bpm / hopSec // battement en hops (fractionnaire)
-    const span = Math.min(nb, Math.floor(90 / hopSec)) // 90 premières secondes
-    let bestO = 0
-    let bestS = -1
-    const steps = Math.max(8, Math.round(period))
+    const secStart = Math.floor(nb * 0.2)
+    const secEnd = Math.min(nb, secStart + Math.floor(120 / hopSec))
+    const steps = Math.max(16, Math.round(period) * 2)
+    const scores = new Float64Array(steps)
     for (let s2 = 0; s2 < steps; s2++) {
       const o = (s2 / steps) * period
       let sum = 0
-      for (let t = o; t < span; t += period) sum += flux[Math.round(t)] ?? 0
-      if (sum > bestS) {
-        bestS = sum
-        bestO = o
-      }
+      for (let t = secStart + o; t < secEnd; t += period) sum += flux[Math.round(t)] ?? 0
+      scores[s2] = sum
     }
-    beatPhase = Math.round(bestO * hopSec * 1000) / 1000
+    let bestI = 0
+    for (let i = 1; i < steps; i++) if (scores[i] > scores[bestI]) bestI = i
+    // affinage parabolique autour du pic
+    const y0 = scores[(bestI - 1 + steps) % steps]
+    const y1 = scores[bestI]
+    const y2 = scores[(bestI + 1) % steps]
+    const denom = y0 - 2 * y1 + y2
+    const shift = denom !== 0 ? Math.max(-0.5, Math.min(0.5, (0.5 * (y0 - y2)) / denom)) : 0
+    const oHops = (((bestI + shift) / steps) % 1) * period
+    // phase globale : ancrée sur la section, ramenée modulo battement
+    const beatSec = 60 / bpm
+    const anchor = (secStart + oHops) * hopSec
+    beatPhase = Math.round(((anchor % beatSec) + beatSec) % beatSec * 1000) / 1000
   }
 
   /* ————— tonalité : chroma depuis le spectre moyen + profils de Krumhansl ————— */
@@ -362,7 +377,7 @@ self.onmessage = (e: MessageEvent<AnalysisJob>) => {
   const rmsDb = round1(db(rms))
 
   const result: AnalysisResultMsg['result'] = {
-    version: 3,
+    version: 4,
     lufsI: round1(lufsI),
     lufsSMax: round1(lufsSMax),
     lra: round1(lra),

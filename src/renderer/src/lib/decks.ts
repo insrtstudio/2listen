@@ -1,75 +1,78 @@
 import type { AnalysisData, Track } from '@shared/types'
 import { claimScene, registerScene } from './audiofocus'
 import { getAnalysis } from './analysis'
+import { decodeTrack } from './decode'
 
 export interface DeckSnapshot {
   track: Track | null
   analysis: AnalysisData | null
-  analyzing: boolean
+  loading: boolean
   playing: boolean
   rate: number
   volume: number
   cue: number
-  masterTempo: boolean
 }
 
 type Sub = () => void
 
+/** Contexte partagé : les deux platines vivent sur la même horloge audio —
+ *  c'est ce qui rend le beat sync précis à l'échantillon. */
+let sharedCtx: AudioContext | null = null
+function ctx(): AudioContext {
+  if (!sharedCtx) sharedCtx = new AudioContext({ latencyHint: 'interactive' })
+  return sharedCtx
+}
+
 /**
- * Platine de mix : élément audio indépendant, pitch ±8 % (playbackRate),
- * point de cue, master tempo (préservation de la hauteur), analyse
- * BPM/tonalité chargée avec la piste. Le crossfader module le volume
- * des deux platines (courbe équal-power).
+ * Platine WebAudio : le morceau est décodé en mémoire et lu par un
+ * AudioBufferSourceNode. Le pitch (varispeed, comme une platine vinyle) est
+ * un pur rééchantillonnage — aucun artefact, contrairement au pipeline média.
+ * Position tenue par segments (offset + durée×rate) sur l'horloge du contexte.
  */
 export class Deck {
-  readonly audio = new Audio()
   track: Track | null = null
   analysis: AnalysisData | null = null
-  analyzing = false
+  buffer: AudioBuffer | null = null
+  loading = false
   playing = false
   rate = 1
   volume = 1
   cue = 0
-  masterTempo = false
-  /** gain issu du crossfader (0–1), appliqué en plus du volume de la platine */
+
+  private src: AudioBufferSourceNode | null = null
+  private gain: GainNode | null = null
   private xf = 1
+  /** bookkeeping de position : segment courant */
+  private segStartCtx = 0
+  private segStartPos = 0
+  private pausedPos = 0
+  private loadSeq = 0
 
   private subs = new Set<Sub>()
   private timeSubs = new Set<(t: number, d: number) => void>()
   private snapshot: DeckSnapshot = this.buildSnapshot()
+  private ticker: ReturnType<typeof setInterval> | null = null
 
-  constructor(readonly name: string) {
-    this.audio.preload = 'auto'
-    // DJ : par défaut le pitch change la hauteur, comme une platine vinyle
-    this.audio.preservesPitch = false
-    this.audio.addEventListener('play', () => {
-      claimScene('decks')
-      this.playing = true
-      this.emit()
-    })
-    this.audio.addEventListener('pause', () => {
-      this.playing = false
-      this.emit()
-    })
-    this.audio.addEventListener('ended', () => {
-      this.playing = false
-      this.emit()
-    })
-    this.audio.addEventListener('timeupdate', () => {
-      for (const cb of this.timeSubs) cb(this.audio.currentTime, this.audio.duration || this.track?.duration || 0)
-    })
+  constructor(readonly name: string) {}
+
+  private ensureGain(): GainNode {
+    if (!this.gain) {
+      this.gain = ctx().createGain()
+      this.gain.connect(ctx().destination)
+      this.applyVolume()
+    }
+    return this.gain
   }
 
   private buildSnapshot(): DeckSnapshot {
     return {
       track: this.track,
       analysis: this.analysis,
-      analyzing: this.analyzing,
+      loading: this.loading,
       playing: this.playing,
       rate: this.rate,
       volume: this.volume,
-      cue: this.cue,
-      masterTempo: this.masterTempo
+      cue: this.cue
     }
   }
 
@@ -90,63 +93,164 @@ export class Deck {
     return () => this.timeSubs.delete(cb)
   }
 
+  private emitTime(): void {
+    const d = this.buffer?.duration ?? this.track?.duration ?? 0
+    for (const cb of this.timeSubs) cb(this.position(), d)
+  }
+
+  /** Position de lecture (secondes de morceau), exacte sur l'horloge partagée. */
+  position(): number {
+    if (!this.playing) return this.pausedPos
+    return this.segStartPos + (ctx().currentTime - this.segStartCtx) * this.rate
+  }
+
+  duration(): number {
+    return this.buffer?.duration ?? this.track?.duration ?? 0
+  }
+
   async load(track: Track): Promise<void> {
+    const seq = ++this.loadSeq
+    this.stopSource()
     this.track = track
     this.analysis = null
-    this.analyzing = true
+    this.buffer = null
+    this.playing = false
+    this.pausedPos = 0
     this.cue = 0
-    this.audio.src = await window.tl.url.audio(track.path)
-    this.applyVolume()
+    this.loading = true
     this.emit()
-    const analysis = await getAnalysis(track.id, track.path)
-    if (this.track?.id === track.id) {
-      this.analysis = analysis
-      this.analyzing = false
-      this.emit()
-    }
+    const [buffer, analysis] = await Promise.all([decodeTrack(track.path), getAnalysis(track.id, track.path)])
+    if (seq !== this.loadSeq) return // une autre piste a été chargée entre-temps
+    this.buffer = buffer
+    this.analysis = analysis
+    this.loading = false
+    this.emit()
+    this.emitTime()
   }
 
   eject(): void {
-    this.audio.pause()
-    this.audio.removeAttribute('src')
+    this.loadSeq++
+    this.stopSource()
     this.track = null
     this.analysis = null
+    this.buffer = null
     this.playing = false
+    this.pausedPos = 0
+    this.emit()
+    this.emitTime()
+  }
+
+  private stopSource(): void {
+    if (this.src) {
+      this.src.onended = null
+      try {
+        this.src.stop()
+      } catch {
+        /* déjà arrêté */
+      }
+      this.src.disconnect()
+      this.src = null
+    }
+    if (this.ticker) {
+      clearInterval(this.ticker)
+      this.ticker = null
+    }
+  }
+
+  /** Démarre la lecture à `pos` (s). */
+  private startAt(pos: number): void {
+    if (!this.buffer) return
+    this.stopSource()
+    const c = ctx()
+    void c.resume().catch(() => {})
+    const src = c.createBufferSource()
+    src.buffer = this.buffer
+    src.playbackRate.value = this.rate
+    src.connect(this.ensureGain())
+    const startTime = c.currentTime
+    const clamped = Math.max(0, Math.min(this.buffer.duration - 0.01, pos))
+    src.start(startTime, clamped)
+    src.onended = () => {
+      if (this.src === src) {
+        this.playing = false
+        this.pausedPos = 0
+        this.stopSource()
+        this.emit()
+      }
+    }
+    this.src = src
+    this.segStartCtx = startTime
+    this.segStartPos = clamped
+    this.playing = true
+    claimScene('decks')
+    this.ticker = setInterval(() => this.emitTime(), 100)
     this.emit()
   }
 
   toggle(): void {
-    if (!this.track) return
-    if (this.audio.paused) void this.audio.play().catch(() => {})
-    else this.audio.pause()
+    if (!this.buffer) return
+    if (this.playing) {
+      this.pausedPos = this.position()
+      this.stopSource()
+      this.playing = false
+      this.emit()
+      this.emitTime()
+    } else {
+      this.startAt(this.pausedPos)
+    }
+  }
+
+  pause(): void {
+    if (this.playing) this.toggle()
   }
 
   /** CUE façon DJ : à l'arrêt pose le point ; en lecture, y retourne. */
   cuePress(): void {
-    if (!this.track) return
-    if (this.audio.paused) {
-      this.cue = this.audio.currentTime
+    if (!this.buffer) return
+    if (!this.playing) {
+      this.cue = this.pausedPos
       this.emit()
     } else {
-      this.audio.currentTime = this.cue
+      this.startAt(this.cue)
     }
   }
 
   seek = (frac: number): void => {
-    const d = this.audio.duration || this.track?.duration || 0
-    if (d > 0) this.audio.currentTime = Math.max(0, Math.min(1, frac)) * d
+    const d = this.duration()
+    if (d <= 0) return
+    const pos = Math.max(0, Math.min(1, frac)) * d
+    if (this.playing) this.startAt(pos)
+    else {
+      this.pausedPos = pos
+      this.emitTime()
+    }
   }
 
-  setRate(rate: number): void {
-    this.rate = Math.max(0.92, Math.min(1.08, rate))
-    this.audio.playbackRate = this.rate
-    this.emit()
+  /** Décale la position de `delta` secondes — précis, sans latence de seek. */
+  nudgePosition(delta: number): void {
+    if (!this.playing) {
+      this.pausedPos = Math.max(0, this.pausedPos + delta)
+      this.emitTime()
+      return
+    }
+    this.startAt(this.position() + delta)
   }
 
-  setMasterTempo(on: boolean): void {
-    this.masterTempo = on
-    this.audio.preservesPitch = on
-    this.emit()
+  /**
+   * Change le pitch. Sur un buffer source c'est un pur rééchantillonnage :
+   * aucun artefact. Le bookkeeping ferme le segment courant à l'instant du
+   * changement pour garder une position exacte.
+   */
+  setRate(rate: number, silent = false): void {
+    const clamped = Math.max(0.92, Math.min(1.08, rate))
+    if (this.playing && this.src) {
+      const now = ctx().currentTime
+      this.segStartPos = this.position()
+      this.segStartCtx = now
+      this.src.playbackRate.setValueAtTime(clamped, now)
+    }
+    this.rate = clamped
+    if (!silent) this.emit()
   }
 
   setVolume(v: number): void {
@@ -161,7 +265,9 @@ export class Deck {
   }
 
   private applyVolume(): void {
-    this.audio.volume = Math.max(0, Math.min(1, this.volume * this.xf))
+    if (!this.gain) return
+    // rampe courte : jamais de clic au crossfade
+    this.gain.gain.setTargetAtTime(Math.max(0, Math.min(1, this.volume * this.xf)), ctx().currentTime, 0.015)
   }
 
   /** BPM effectif (tempo détecté × pitch). */
@@ -175,8 +281,8 @@ export const deckA = new Deck('A')
 export const deckB = new Deck('B')
 
 registerScene('decks', () => {
-  deckA.audio.pause()
-  deckB.audio.pause()
+  deckA.pause()
+  deckB.pause()
 })
 
 let crossfade = 0.5
@@ -200,7 +306,7 @@ function commonGrid(a: Deck, b: Deck): { divA: number; divB: number } | null {
   const eb = b.effectiveBpm()
   if (!ea || !eb) return null
   const ratio = ea / eb
-  if (ratio > 1.5) return { divA: 2, divB: 1 } // A double-time : caler sur le temps de B
+  if (ratio > 1.5) return { divA: 2, divB: 1 }
   if (ratio < 0.66) return { divA: 1, divB: 2 }
   return { divA: 1, divB: 1 }
 }
@@ -210,31 +316,48 @@ function beatFrac(deck: Deck, div: number): number | null {
   const an = deck.analysis
   if (!an || !an.bpm) return null
   const beatSec = (60 / an.bpm) * div
-  const t = deck.audio.currentTime - an.beatPhase
+  const t = deck.position() - an.beatPhase
   return ((t / beatSec) % 1 + 1) % 1
 }
 
-/**
- * Calage de phase : décale `slave` (currentTime) pour que ses battements
- * tombent sur ceux de `master`, vers le battement le plus proche.
- */
-export function phaseAlign(master: Deck, slave: Deck): void {
+/** Erreur de phase signée (secondes, grille du slave), vers le battement le plus proche. */
+function phaseError(master: Deck, slave: Deck): number | null {
   const grid = commonGrid(master, slave)
-  if (!grid) return
+  if (!grid || !slave.analysis?.bpm) return null
   const [divM, divS] = master === deckA ? [grid.divA, grid.divB] : [grid.divB, grid.divA]
   const fm = beatFrac(master, divM)
   const fs = beatFrac(slave, divS)
-  if (fm === null || fs === null || !slave.analysis?.bpm) return
+  if (fm === null || fs === null) return null
   const beatSecS = (60 / slave.analysis.bpm) * divS
   let diff = fm - fs
   if (diff > 0.5) diff -= 1
   if (diff < -0.5) diff += 1
-  slave.audio.currentTime = Math.max(0, slave.audio.currentTime + diff * beatSecS)
+  return diff * beatSecS
 }
 
-/** Le « maître » est la platine la plus présente au crossfader (B si égalité et A muette). */
+/** Calage de phase immédiat, précis à l'échantillon (horloge partagée). */
+export function phaseAlign(master: Deck, slave: Deck): void {
+  const err = phaseError(master, slave)
+  if (err === null) return
+  slave.nudgePosition(err)
+}
+
+/** Le « maître » est la platine la plus présente au crossfader. */
 export function masterSlave(): [Deck, Deck] {
   return crossfade <= 0.5 ? [deckA, deckB] : [deckB, deckA]
+}
+
+/** Écart de battement résiduel entre les platines, en tenant compte du 2:1. */
+export function beatDelta(a: Deck, b: Deck): { delta: number; ratio: 1 | 2 | 0.5 } | null {
+  const ea = a.effectiveBpm()
+  const eb = b.effectiveBpm()
+  if (!ea || !eb) return null
+  let best: { delta: number; ratio: 1 | 2 | 0.5 } = { delta: Math.abs(ea - eb), ratio: 1 }
+  for (const ratio of [2, 0.5] as const) {
+    const d = Math.abs(ea - eb * ratio)
+    if (d < best.delta) best = { delta: d, ratio }
+  }
+  return best
 }
 
 /* ————— LOCK : recalage automatique continu ————— */
@@ -263,80 +386,50 @@ export function setBeatLock(on: boolean): void {
     lockTimer = null
   }
   if (on) {
-    let settle = 0 // ticks à ignorer après un saut (latence de seek)
     lockTimer = setInterval(() => {
       const [master, slave] = masterSlave()
       if (!master.playing || !slave.playing) return
-      if (settle > 0) {
-        settle--
-        return
-      }
-      const grid = commonGrid(master, slave)
-      if (!grid) return
-      const [divM, divS] = master === deckA ? [grid.divA, grid.divB] : [grid.divB, grid.divA]
-      const fm = beatFrac(master, divM)
-      const fs = beatFrac(slave, divS)
-      if (fm === null || fs === null || !slave.analysis?.bpm) return
-      const beatSecS = (60 / slave.analysis.bpm) * divS
-      let diff = fm - fs
-      if (diff > 0.5) diff -= 1
-      if (diff < -0.5) diff += 1
-      const errSec = diff * beatSecS
-      lastPhaseErrMs = Math.round(errSec * 1000)
-      if (Math.abs(errSec) > 0.15) {
-        // très loin (départ, seek manuel) : un seul recalage franc puis on
-        // laisse le seek se poser avant de re-mesurer
-        slave.audio.currentTime = Math.max(0, slave.audio.currentTime + errSec)
-        slave.audio.playbackRate = slave.rate
-        settle = 2
-      } else {
-        // rattrapage par micro-pitch uniquement : aucun seek, aucun glitch
-        const nudge = Math.max(-0.02, Math.min(0.02, errSec * 1.5))
-        slave.audio.playbackRate = slave.rate * (1 + nudge)
+      const err = phaseError(master, slave)
+      if (err === null) return
+      lastPhaseErrMs = Math.round(err * 1000)
+      if (Math.abs(err) > 0.08) {
+        // loin (départ, seek manuel) : recalage exact — l'horloge partagée
+        // n'a pas de latence de seek, ça colle du premier coup
+        slave.nudgePosition(err)
+      } else if (Math.abs(err) > 0.004) {
+        // dérive fine : micro-varispeed proportionnel (±1,5 %), pur
+        // rééchantillonnage donc aucun artefact
+        const nudge = Math.max(-0.015, Math.min(0.015, err * 1.2))
+        const base = slave.rate
+        slave.setRate(base * (1 + nudge), true)
+        // retour au pitch nominal juste avant le tick suivant
+        setTimeout(() => {
+          if (lockOn) slave.setRate(base, true)
+        }, 520)
       }
       for (const cb of lockSubs) cb()
     }, 600)
   } else {
-    // restaure les pitchs nominaux
-    deckA.audio.playbackRate = deckA.rate
-    deckB.audio.playbackRate = deckB.rate
     lastPhaseErrMs = 0
   }
   for (const cb of lockSubs) cb()
 }
 
 /**
- * SYNC bilatéral : les deux platines convergent vers un tempo commun
- * (moyenne géométrique) — chaque pitch bouge deux fois moins qu'un esclavage
- * classique, donc reste bien plus souvent dans la plage ±8 %. Si un morceau
- * est en half/double-time, on se cale sur le rapport 2:1 le plus proche.
+ * SYNC ⇄ : les deux platines convergent vers un tempo commun (moyenne
+ * géométrique — chaque pitch bouge deux fois moins), rapport half/double
+ * choisi au plus proche, puis calage de phase immédiat.
  */
 export function syncBoth(a: Deck, b: Deck): void {
   const bpmA = a.analysis?.bpm
   const bpmB = b.analysis?.bpm
   if (!bpmA || !bpmB) return
-  // rapport de B le plus proche de A (1x, 2x ou ½x) en distance log
   const tB = [bpmB, bpmB * 2, bpmB / 2].reduce((best, cand) =>
     Math.abs(Math.log(bpmA / cand)) < Math.abs(Math.log(bpmA / best)) ? cand : best
   )
   const target = Math.sqrt(bpmA * tB)
   a.setRate(target / bpmA)
-  // si la borne ±8 % a tronqué A, B rejoint le tempo réellement atteint
   b.setRate((bpmA * a.rate) / tB)
-  // calage de phase immédiat : la platine la moins présente rejoint l'autre
   const [master, slave] = masterSlave()
   phaseAlign(master, slave)
-}
-
-/** Écart de battement résiduel entre les platines, en tenant compte du 2:1. */
-export function beatDelta(a: Deck, b: Deck): { delta: number; ratio: 1 | 2 | 0.5 } | null {
-  const ea = a.effectiveBpm()
-  const eb = b.effectiveBpm()
-  if (!ea || !eb) return null
-  let best: { delta: number; ratio: 1 | 2 | 0.5 } = { delta: Math.abs(ea - eb), ratio: 1 }
-  for (const ratio of [2, 0.5] as const) {
-    const d = Math.abs(ea - eb * ratio)
-    if (d < best.delta) best = { delta: d, ratio }
-  }
-  return best
 }

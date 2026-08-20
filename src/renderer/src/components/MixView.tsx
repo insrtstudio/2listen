@@ -47,8 +47,8 @@ function DeckPanel({ deck, accent }: { deck: Deck; accent: boolean }): React.Rea
       {/* infos BPM / clé / qualité */}
       <div style={{ display: 'flex', gap: 8, alignItems: 'baseline', padding: '8px 12px', borderBottom: 'var(--line)', flexWrap: 'wrap' }}>
         <span style={{ font: '700 26px/1 var(--grotesk)', color, minWidth: 88 }}>
-          {snap.analyzing ? (
-            <span className="mono" style={{ fontSize: 10, animation: 'blink 1s steps(1) infinite' }}>ANALYSE…</span>
+          {snap.loading ? (
+            <span className="mono" style={{ fontSize: 10, animation: 'blink 1s steps(1) infinite' }}>CHARGEMENT…</span>
           ) : bpm ? (
             <>
               {bpm.toFixed(1)}
@@ -96,20 +96,6 @@ function DeckPanel({ deck, accent }: { deck: Deck; accent: boolean }): React.Rea
           }}
         >
           {snap.playing ? '❚❚' : '▶'}
-        </button>
-        <button
-          className="mono tap"
-          onClick={() => deck.setMasterTempo(!snap.masterTempo)}
-          title="Master tempo : le pitch ne change plus la hauteur"
-          style={{
-            fontSize: 9,
-            letterSpacing: '.1em',
-            border: '1.5px solid currentColor',
-            padding: '5px 9px',
-            color: snap.masterTempo ? 'var(--accent)' : 'var(--ink-soft)'
-          }}
-        >
-          MT
         </button>
         <div style={{ flex: 1, minWidth: 130, display: 'flex', alignItems: 'center', gap: 8 }}>
           <span className="mono" style={{ fontSize: 8, color: 'var(--ink-soft)' }}>PITCH</span>
