@@ -4,6 +4,7 @@ import { claimScene, registerScene } from './audiofocus'
 export interface EqMove {
   freq: number
   gainDb: number
+  q: number
   type: 'lowshelf' | 'peaking' | 'highshelf'
   label: string
 }
@@ -20,39 +21,137 @@ export interface Corrections {
   comp: CompMove | null
 }
 
-/** Bandes de correction : centre, type de filtre, libellé. */
-const BANDS: Array<{ f0: number; f1: number; freq: number; type: EqMove['type']; label: string }> = [
-  { f0: 20, f1: 120, freq: 80, type: 'lowshelf', label: 'graves' },
-  { f0: 120, f1: 500, freq: 250, type: 'peaking', label: 'bas-médiums' },
-  { f0: 500, f1: 2000, freq: 1000, type: 'peaking', label: 'médiums' },
-  { f0: 2000, f1: 6000, freq: 3500, type: 'peaking', label: 'hauts-médiums' },
-  { f0: 6000, f1: 20000, freq: 9000, type: 'highshelf', label: 'aigus' }
-]
+const MAX_FILTERS = 8
+
+const bandName = (f: number): string =>
+  f < 120 ? 'graves' : f < 500 ? 'bas-médiums' : f < 2000 ? 'médiums' : f < 6000 ? 'hauts-médiums' : 'aigus'
+
+/** Réponse en dB d'un biquad RBJ (fs 48 kHz) aux fréquences demandées. */
+function biquadResponseDb(
+  type: EqMove['type'],
+  f0: number,
+  q: number,
+  gainDb: number,
+  freqs: number[]
+): number[] {
+  const fs = 48000
+  const A = Math.pow(10, gainDb / 40)
+  const w0 = (2 * Math.PI * f0) / fs
+  const cosW = Math.cos(w0)
+  const alpha = Math.sin(w0) / (2 * q)
+  let b0: number, b1: number, b2: number, a0: number, a1: number, a2: number
+  if (type === 'peaking') {
+    b0 = 1 + alpha * A
+    b1 = -2 * cosW
+    b2 = 1 - alpha * A
+    a0 = 1 + alpha / A
+    a1 = -2 * cosW
+    a2 = 1 - alpha / A
+  } else if (type === 'lowshelf') {
+    const s = 2 * Math.sqrt(A) * alpha
+    b0 = A * (A + 1 - (A - 1) * cosW + s)
+    b1 = 2 * A * (A - 1 - (A + 1) * cosW)
+    b2 = A * (A + 1 - (A - 1) * cosW - s)
+    a0 = A + 1 + (A - 1) * cosW + s
+    a1 = -2 * (A - 1 + (A + 1) * cosW)
+    a2 = A + 1 + (A - 1) * cosW - s
+  } else {
+    const s = 2 * Math.sqrt(A) * alpha
+    b0 = A * (A + 1 + (A - 1) * cosW + s)
+    b1 = -2 * A * (A - 1 + (A + 1) * cosW)
+    b2 = A * (A + 1 + (A - 1) * cosW - s)
+    a0 = A + 1 - (A - 1) * cosW + s
+    a1 = 2 * (A - 1 - (A + 1) * cosW)
+    a2 = A + 1 - (A - 1) * cosW - s
+  }
+  b0 /= a0; b1 /= a0; b2 /= a0; a1 /= a0; a2 /= a0
+  return freqs.map((f) => {
+    const w = (2 * Math.PI * f) / fs
+    const c1 = Math.cos(w), s1 = Math.sin(w)
+    const c2 = Math.cos(2 * w), s2 = Math.sin(2 * w)
+    const nr = b0 + b1 * c1 + b2 * c2
+    const ni = b1 * s1 + b2 * s2
+    const dr = 1 + a1 * c1 + a2 * c2
+    const di = a1 * s1 + a2 * s2
+    const mag2 = (nr * nr + ni * ni) / (dr * dr + di * di)
+    return 10 * Math.log10(mag2 + 1e-20)
+  })
+}
 
 /**
- * Déduit des corrections applicables des écarts A vs référence :
- * EQ par bande (écarts > 1,5 dB, bornés à ±6 dB) et compression si le mix
- * est nettement plus dynamique que la référence, avec make-up qui ramène
- * la loudness au niveau de la référence.
+ * EQ matching chirurgical : fitting itératif de la courbe Δ (A alignée − B).
+ * À chaque itération, la déviation dominante est localisée, sa LARGEUR mesurée
+ * (points à mi-hauteur) donne le Q réel (jusqu'à 8), un filtre correctif est
+ * posé à la fréquence exacte, sa réponse théorique est soustraite du résidu,
+ * et on itère jusqu'à résidu < 1,2 dB ou 8 filtres.
  */
 export function computeCorrections(a: AnalysisData, b: AnalysisData): Corrections {
   const offset = a.lufsI - b.lufsI // alignement : on compare la forme
-  const eq: EqMove[] = []
-  for (const band of BANDS) {
+  const freqs = a.freqs
+  const n = freqs.length
+  // résidu initial, légèrement lissé pour ne pas fitter le bruit de mesure
+  const raw = freqs.map((_, i) => a.spectrum[i] - offset - b.spectrum[i])
+  const residual = raw.map((_, i) => {
     let sum = 0
     let cnt = 0
-    a.freqs.forEach((f, i) => {
-      if (f >= band.f0 && f < band.f1) {
-        sum += a.spectrum[i] - offset - b.spectrum[i]
-        cnt++
-      }
-    })
-    const delta = sum / (cnt || 1)
-    if (Math.abs(delta) >= 1.5) {
-      const gainDb = Math.round(Math.max(-6, Math.min(6, -delta)) * 10) / 10
-      eq.push({ freq: band.freq, gainDb, type: band.type, label: band.label })
+    for (let k = Math.max(0, i - 1); k <= Math.min(n - 1, i + 1); k++) {
+      sum += raw[k]
+      cnt++
     }
+    return sum / cnt
+  })
+  // pondération : le très grave et l'extrême aigu comptent un peu moins
+  const weight = freqs.map((f) => (f < 40 || f > 16000 ? 0.3 : f < 60 || f > 12000 ? 0.7 : 1))
+
+  const eq: EqMove[] = []
+  for (let iter = 0; iter < MAX_FILTERS; iter++) {
+    let pi = -1
+    let pv = 0
+    for (let i = 0; i < n; i++) {
+      const v = Math.abs(residual[i]) * weight[i]
+      if (freqs[i] < 30 || freqs[i] > 18000 || v <= pv) continue
+      // pas d'empilement : on ne repose pas un filtre corrigeant le même signe
+      // à moins d'une demi-octave d'un filtre déjà posé
+      const stacked = eq.some(
+        (m) => Math.abs(Math.log2(freqs[i] / m.freq)) < 0.45 && Math.sign(residual[i]) === -Math.sign(m.gainDb)
+      )
+      if (stacked) continue
+      pv = v
+      pi = i
+    }
+    if (pi < 0 || Math.abs(residual[pi]) < 1.2) break
+
+    const peak = residual[pi]
+    const sign = Math.sign(peak)
+    // largeur à mi-hauteur, même signe
+    let lo = pi
+    while (lo > 0 && Math.sign(residual[lo - 1]) === sign && Math.abs(residual[lo - 1]) >= Math.abs(peak) / 2) lo--
+    let hi = pi
+    while (hi < n - 1 && Math.sign(residual[hi + 1]) === sign && Math.abs(residual[hi + 1]) >= Math.abs(peak) / 2) hi++
+    const bwOct = Math.max(0.12, Math.log2(freqs[Math.min(n - 1, hi + 1)] / freqs[Math.max(0, lo - 1)]))
+    // Q depuis la bande passante mesurée : Q = 2^(N/2) / (2^N − 1)
+    let q = Math.pow(2, bwOct / 2) / (Math.pow(2, bwOct) - 1)
+    q = Math.max(0.5, Math.min(8, q))
+
+    // déviations très larges aux extrêmes : un shelf est plus musical
+    let type: EqMove['type'] = 'peaking'
+    if (bwOct > 2.2 && freqs[pi] < 150) {
+      type = 'lowshelf'
+      q = 0.72
+    } else if (bwOct > 2.2 && freqs[pi] > 5000) {
+      type = 'highshelf'
+      q = 0.72
+    }
+
+    const gainDb = Math.round(Math.max(-12, Math.min(12, -peak * 0.85)) * 10) / 10
+    const f0 = Math.round(freqs[pi])
+    eq.push({ freq: f0, gainDb, q: Math.round(q * 10) / 10, type, label: bandName(f0) })
+
+    // soustrait la réponse réelle du filtre du résidu
+    const resp = biquadResponseDb(type, f0, q, gainDb, freqs)
+    for (let i = 0; i < n; i++) residual[i] += resp[i]
   }
+  eq.sort((x, y) => Math.abs(y.gainDb) - Math.abs(x.gainDb))
 
   let comp: CompMove | null = null
   const excessCrest = a.crestDb - b.crestDb
@@ -114,11 +213,12 @@ class PreviewEngine {
     if (this.ctx) return
     this.ctx = new AudioContext()
     const src = this.ctx.createMediaElementSource(this.audio)
-    this.filters = BANDS.map((b) => {
+    // pool de filtres : configurés à la volée, gain 0 = transparent
+    this.filters = Array.from({ length: MAX_FILTERS }, () => {
       const f = this.ctx!.createBiquadFilter()
-      f.type = b.type
-      f.frequency.value = b.freq
-      f.Q.value = 0.9
+      f.type = 'peaking'
+      f.frequency.value = 1000
+      f.Q.value = 1
       f.gain.value = 0
       return f
     })
@@ -140,9 +240,16 @@ class PreviewEngine {
   private apply(corrections: Corrections | null): void {
     if (!this.ctx || !this.compressor || !this.makeup) return
     const active = this.corrected && corrections
-    for (let i = 0; i < BANDS.length; i++) {
-      const move = active ? corrections.eq.find((m) => m.freq === BANDS[i].freq) : undefined
-      this.filters[i].gain.value = move ? move.gainDb : 0
+    for (let i = 0; i < this.filters.length; i++) {
+      const move = active ? corrections.eq[i] : undefined
+      if (move) {
+        this.filters[i].type = move.type
+        this.filters[i].frequency.value = move.freq
+        this.filters[i].Q.value = move.q
+        this.filters[i].gain.value = move.gainDb
+      } else {
+        this.filters[i].gain.value = 0
+      }
     }
     if (active && corrections.comp) {
       this.compressor.threshold.value = corrections.comp.thresholdDb

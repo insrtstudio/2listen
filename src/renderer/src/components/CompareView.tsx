@@ -354,9 +354,11 @@ export default function CompareView(): React.ReactNode {
                 <span className="mono" style={{ fontSize: 8, letterSpacing: '.12em', color: 'var(--ink-soft)' }}>
                   CORRECTIONS « A CORRIGÉ ✦ » :
                 </span>
-                {corrections.eq.map((m) => (
-                  <span key={m.freq} className="badge" style={{ color: side === 'AC' ? 'var(--accent)' : undefined }}>
-                    EQ {m.label} {m.gainDb > 0 ? '+' : ''}{m.gainDb} dB @ {m.freq >= 1000 ? `${m.freq / 1000}k` : m.freq} Hz
+                {corrections.eq.map((m, i) => (
+                  <span key={`${m.freq}-${i}`} className="badge" style={{ color: side === 'AC' ? 'var(--accent)' : undefined }}>
+                    {m.type === 'lowshelf' ? 'SHELF↓' : m.type === 'highshelf' ? 'SHELF↑' : 'EQ'} {m.gainDb > 0 ? '+' : ''}
+                    {m.gainDb} dB @ {m.freq >= 1000 ? `${(m.freq / 1000).toFixed(m.freq < 10000 ? 2 : 1)}k` : m.freq} Hz
+                    {m.type === 'peaking' ? ` · Q ${m.q}` : ''}
                   </span>
                 ))}
                 {corrections.comp && (
