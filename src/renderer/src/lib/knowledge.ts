@@ -133,6 +133,53 @@ export function clubAssessment(a: AnalysisData): string[] {
   return out
 }
 
+/**
+ * Tricks avancés des ingés référents (Pretolesi/MyMixLab-pureMix, Dupont/
+ * pureMix, MusicTech, Streaky, Point Blank…) — déclenchés par les mesures,
+ * jamais récités hors contexte.
+ */
+export function proTricks(a: AnalysisData, b: AnalysisData): string[] {
+  const out: string[] = []
+
+  // sub fort mais sans harmoniques : ne traduira pas sur petites enceintes
+  const sub = bandAvg(a, 40, 80)
+  const harmonics = bandAvg(a, 100, 300)
+  if (sub > -35 && sub - harmonics > 12)
+    out.push(
+      'Sub puissant mais pauvre en harmoniques (80–300 Hz) : sur téléphone/laptop il disparaîtra. Saturez légèrement le sub (2e/3e harmonique — 30 Hz nourrit 60/90 Hz) : le cerveau reconstruit la fondamentale (« phantom fundamental »). Gardez la fondamentale propre, saturez au-dessus.'
+    )
+
+  // arrangement plat : le drop n'a nulle part où aller
+  const contrast = a.lufsSMax - a.lufsI
+  if (contrast < 1.5 && a.lufsI > -14)
+    out.push(
+      `Contraste court-terme/intégré de ${contrast.toFixed(1)} LU seulement : tout est au même niveau — l'impact d'un drop vient du contraste, pas du volume. Creusez le break (filtrez les graves, retirez le kick) pour donner au drop un endroit d'où surgir.`
+    )
+
+  // master écrasé : chemin soft-clip étagé plutôt que brickwall
+  if (a.crestDb < 9 && a.lufsI > -8)
+    out.push(
+      'Pour la loudness sans écraser : gagnez du niveau AVANT le limiteur — soft-clip du bus batterie (1–2 dB), saturation d\'étage, compression parallèle (mélange d\'une version compressée 10–20 dB de GR) — et laissez le limiteur final ne prendre que 1–3 dB.'
+    )
+
+  // kick sans click : layering
+  const fund = lowFundamental(a)
+  const click = bandAvg(a, 2000, 5000)
+  const mids = bandAvg(a, 300, 1200)
+  if (fund && click < mids - 9)
+    out.push(
+      'Kick présent dans le sub mais sans « click » (2–5 kHz) : il se perdra dans un mix chargé. Méthode des ingés EDM (Pretolesi) : layering en trois couches — sub (fondamentale), punch (100–200 Hz), click (2–4 kHz) — chacune traitée séparément.'
+    )
+
+  // écarts de largeur : le M/S est l'outil des mastering engineers
+  if (Math.abs(b.widthMidDb - a.widthMidDb) >= 2 || Math.abs(b.widthHighDb - a.widthHighDb) >= 2)
+    out.push(
+      'Pour ajuster la largeur au mastering, travaillez en Mid/Side (méthode Dupont/pureMix) : EQ du Side indépendant du Mid — élargir les aigus sans toucher le centre, resserrer les graves sans perdre le punch.'
+    )
+
+  return out
+}
+
 /** Ligne de sources, affichée sous les repères. */
 export const KNOWLEDGE_SOURCES =
-  'Repères : Sound on Sound (Mixing Bass, pink-noise reference), iZotope Tonal Balance, Riemann Kollektion & guides de mastering techno/house (LUFS club, PLR, mono < 120 Hz, kick 40–60 Hz accordé).'
+  'Repères : Sound on Sound (Mixing Bass, pink-noise ref) · iZotope Tonal Balance · Riemann Kollektion · guides mastering techno/house (LUFS club, PLR, mono <120 Hz, kick 40–60 Hz accordé) · Pretolesi/MyMixLab & pureMix (layering kick, M/S, multiband) · MusicTech/Streaky (harmoniques de sub) · Point Blank (contraste des drops).'

@@ -6,7 +6,7 @@ import { player } from '@/lib/player'
 import { useStore } from '@/lib/store'
 import TrackPicker from './TrackPicker'
 import { fmtNote } from '@/lib/notes'
-import { clubAssessment, KNOWLEDGE_SOURCES } from '@/lib/knowledge'
+import { clubAssessment, KNOWLEDGE_SOURCES, proTricks } from '@/lib/knowledge'
 
 /* ————— spectre superposé + bande de delta ————— */
 function SpectrumChart({ a, b, aligned }: { a: AnalysisData; b: AnalysisData; aligned: boolean }): React.ReactNode {
@@ -524,6 +524,19 @@ export default function CompareView(): React.ReactNode {
                 <div className="mono" style={{ fontSize: 8, color: 'var(--ink-soft)', padding: '0 12px 8px', letterSpacing: '.03em' }}>
                   {KNOWLEDGE_SOURCES}
                 </div>
+              </div>
+            )}
+
+            {proTricks(dataA, dataB).length > 0 && (
+              <div style={{ border: 'var(--line)' }}>
+                <div className="mono" style={{ fontSize: 9, letterSpacing: '.1em', color: 'var(--accent)', padding: '8px 12px 2px' }}>
+                  TRICKS DES MASTERS — DÉCLENCHÉS PAR VOS MESURES
+                </div>
+                <ul style={{ margin: 0, padding: '6px 12px 10px 28px' }}>
+                  {proTricks(dataA, dataB).map((v, i) => (
+                    <li key={i} style={{ font: '500 13px/1.7 var(--grotesk)' }}>{v}</li>
+                  ))}
+                </ul>
               </div>
             )}
 
