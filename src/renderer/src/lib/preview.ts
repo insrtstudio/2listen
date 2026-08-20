@@ -30,6 +30,8 @@ export interface Corrections {
   eq: EqMove[]
   comp: CompMove | null
   stereo: StereoMove | null
+  /** high-pass anti-rumble (Hz) — le sub inaudible fait pomper le limiteur */
+  rumbleHpHz: number | null
 }
 
 const MAX_FILTERS = 8
@@ -164,6 +166,23 @@ export function computeCorrections(a: AnalysisData, b: AnalysisData): Correction
   }
   eq.sort((x, y) => Math.abs(y.gainDb) - Math.abs(x.gainDb))
 
+  /* ————— rumble : énergie sous 30 Hz sans contrepartie dans la référence ————— */
+  const band = (an: AnalysisData, f0: number, f1: number): number => {
+    let sum = 0
+    let cnt = 0
+    an.freqs.forEach((f, i) => {
+      if (f >= f0 && f < f1) {
+        sum += an.spectrum[i]
+        cnt++
+      }
+    })
+    return cnt > 0 ? sum / cnt : -120
+  }
+  let rumbleHpHz: number | null = null
+  if (band(a, 20, 30) - band(a, 40, 80) > band(b, 20, 30) - band(b, 40, 80) + 3) {
+    rumbleHpHz = 28
+  }
+
   /* ————— correction stéréo (matching M/S vs référence) ————— */
   let stereo: StereoMove | null = null
   {
@@ -204,7 +223,7 @@ export function computeCorrections(a: AnalysisData, b: AnalysisData): Correction
       label: `compression ${excessCrest.toFixed(1)} dB de crête en trop`
     }
   }
-  return { eq, comp, stereo }
+  return { eq, comp, stereo, rumbleHpHz }
 }
 
 /**
@@ -218,6 +237,7 @@ class PreviewEngine {
   private filters: BiquadFilterNode[] = []
   private compressor: DynamicsCompressorNode | null = null
   private makeup: GainNode | null = null
+  private rumbleHp: BiquadFilterNode | null = null
   private sHighpass: BiquadFilterNode | null = null
   private sShelf: BiquadFilterNode | null = null
   private sWidth: GainNode | null = null
@@ -253,7 +273,14 @@ class PreviewEngine {
   private ensureGraph(): void {
     if (this.ctx) return
     this.ctx = new AudioContext()
-    const raw = this.ctx.createMediaElementSource(this.audio)
+    const src0 = this.ctx.createMediaElementSource(this.audio)
+    // high-pass anti-rumble (10 Hz ≈ neutre)
+    this.rumbleHp = this.ctx.createBiquadFilter()
+    this.rumbleHp.type = 'highpass'
+    this.rumbleHp.frequency.value = 10
+    this.rumbleHp.Q.value = 0.71
+    src0.connect(this.rumbleHp)
+    const raw = this.rumbleHp
 
     // ————— matrice Mid/Side : M=(L+R)/2, S=(L-R)/2, retour L=M+S, R=M−S —————
     const split = this.ctx.createChannelSplitter(2)
@@ -337,6 +364,7 @@ class PreviewEngine {
         this.filters[i].gain.value = 0
       }
     }
+    if (this.rumbleHp) this.rumbleHp.frequency.value = (active ? corrections.rumbleHpHz : null) ?? 10
     if (this.sHighpass && this.sShelf && this.sWidth) {
       const st = active ? corrections.stereo : null
       this.sHighpass.frequency.value = st?.bassMonoHz ?? 10

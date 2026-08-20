@@ -6,6 +6,7 @@ import { player } from '@/lib/player'
 import { useStore } from '@/lib/store'
 import TrackPicker from './TrackPicker'
 import { fmtNote } from '@/lib/notes'
+import { clubAssessment, KNOWLEDGE_SOURCES } from '@/lib/knowledge'
 
 /* ————— spectre superposé + bande de delta ————— */
 function SpectrumChart({ a, b, aligned }: { a: AnalysisData; b: AnalysisData; aligned: boolean }): React.ReactNode {
@@ -432,6 +433,11 @@ export default function CompareView(): React.ReactNode {
                     {m.type === 'peaking' ? ` · Q ${m.q}` : ''}
                   </span>
                 ))}
+                {corrections.rumbleHpHz && (
+                  <span className="badge" style={{ color: side === 'AC' ? 'var(--accent)' : undefined }}>
+                    HP anti-rumble {corrections.rumbleHpHz} Hz
+                  </span>
+                )}
                 {corrections.stereo?.labels.map((l) => (
                   <span key={l} className="badge" style={{ color: side === 'AC' ? 'var(--accent)' : undefined }}>
                     STÉRÉO {l}
@@ -442,7 +448,7 @@ export default function CompareView(): React.ReactNode {
                     COMP {corrections.comp.ratio}:1 @ {corrections.comp.thresholdDb} dB · make-up {corrections.comp.makeupDb > 0 ? '+' : ''}{corrections.comp.makeupDb} dB
                   </span>
                 )}
-                {corrections.eq.length === 0 && !corrections.comp && !corrections.stereo && (
+                {corrections.eq.length === 0 && !corrections.comp && !corrections.stereo && !corrections.rumbleHpHz && (
                   <span className="mono" style={{ fontSize: 9, color: 'var(--ink-soft)' }}>aucune correction nécessaire — le mix colle déjà à la référence</span>
                 )}
               </div>
@@ -504,6 +510,22 @@ export default function CompareView(): React.ReactNode {
                 ))}
               </ul>
             </div>
+
+            {clubAssessment(dataA).length > 0 && (
+              <div style={{ border: 'var(--line)' }}>
+                <div className="mono" style={{ fontSize: 9, letterSpacing: '.1em', color: 'var(--accent)', padding: '8px 12px 2px' }}>
+                  REPÈRES CLUB — VOTRE MIX (A) FACE AUX STANDARDS ÉLECTRO
+                </div>
+                <ul style={{ margin: 0, padding: '6px 12px 6px 28px' }}>
+                  {clubAssessment(dataA).map((v, i) => (
+                    <li key={i} style={{ font: '500 13px/1.7 var(--grotesk)' }}>{v}</li>
+                  ))}
+                </ul>
+                <div className="mono" style={{ fontSize: 8, color: 'var(--ink-soft)', padding: '0 12px 8px', letterSpacing: '.03em' }}>
+                  {KNOWLEDGE_SOURCES}
+                </div>
+              </div>
+            )}
 
             {stereoTips(dataA, dataB).length > 0 && (
               <div style={{ border: 'var(--line)' }}>
