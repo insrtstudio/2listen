@@ -16,9 +16,20 @@ export interface CompMove {
   label: string
 }
 
+export interface StereoMove {
+  /** monoïse le canal Side sous cette fréquence (null = pas de correction) */
+  bassMonoHz: number | null
+  /** shelf haut sur le canal Side (dB) : élargit/resserre les aigus */
+  sHighShelfDb: number
+  /** gain global du canal Side (linéaire) : largeur d'ensemble */
+  sWidthGain: number
+  labels: string[]
+}
+
 export interface Corrections {
   eq: EqMove[]
   comp: CompMove | null
+  stereo: StereoMove | null
 }
 
 const MAX_FILTERS = 8
@@ -153,6 +164,33 @@ export function computeCorrections(a: AnalysisData, b: AnalysisData): Correction
   }
   eq.sort((x, y) => Math.abs(y.gainDb) - Math.abs(x.gainDb))
 
+  /* ————— correction stéréo (matching M/S vs référence) ————— */
+  let stereo: StereoMove | null = null
+  {
+    const labels: string[] = []
+    let bassMonoHz: number | null = null
+    let sHighShelfDb = 0
+    let sWidthGain = 1
+    // basses trop larges vs référence : monoïsation sous 120 Hz
+    if (a.widthLowDb > -20 && a.widthLowDb > b.widthLowDb + 3) {
+      bassMonoHz = 120
+      labels.push('basses → mono sous 120 Hz')
+    }
+    // largeur des aigus : shelf sur le canal Side
+    const dHigh = b.widthHighDb - a.widthHighDb
+    if (Math.abs(dHigh) >= 2 && a.widthHighDb > -55) {
+      sHighShelfDb = Math.round(Math.max(-6, Math.min(6, dHigh)) * 10) / 10
+      labels.push(`largeur aigus ${sHighShelfDb > 0 ? '+' : ''}${sHighShelfDb} dB`)
+    }
+    // largeur d'ensemble (médiums) : gain global du Side
+    const dMid = b.widthMidDb - a.widthMidDb
+    if (Math.abs(dMid) >= 2 && a.widthMidDb > -55) {
+      sWidthGain = Math.round(Math.max(0.5, Math.min(1.8, Math.pow(10, dMid / 20))) * 100) / 100
+      labels.push(`largeur globale ×${sWidthGain}`)
+    }
+    if (labels.length > 0) stereo = { bassMonoHz, sHighShelfDb, sWidthGain, labels }
+  }
+
   let comp: CompMove | null = null
   const excessCrest = a.crestDb - b.crestDb
   if (excessCrest > 2) {
@@ -166,7 +204,7 @@ export function computeCorrections(a: AnalysisData, b: AnalysisData): Correction
       label: `compression ${excessCrest.toFixed(1)} dB de crête en trop`
     }
   }
-  return { eq, comp }
+  return { eq, comp, stereo }
 }
 
 /**
@@ -180,6 +218,9 @@ class PreviewEngine {
   private filters: BiquadFilterNode[] = []
   private compressor: DynamicsCompressorNode | null = null
   private makeup: GainNode | null = null
+  private sHighpass: BiquadFilterNode | null = null
+  private sShelf: BiquadFilterNode | null = null
+  private sWidth: GainNode | null = null
   playing = false
   corrected = true
   private subs = new Set<() => void>()
@@ -212,7 +253,52 @@ class PreviewEngine {
   private ensureGraph(): void {
     if (this.ctx) return
     this.ctx = new AudioContext()
-    const src = this.ctx.createMediaElementSource(this.audio)
+    const raw = this.ctx.createMediaElementSource(this.audio)
+
+    // ————— matrice Mid/Side : M=(L+R)/2, S=(L-R)/2, retour L=M+S, R=M−S —————
+    const split = this.ctx.createChannelSplitter(2)
+    raw.connect(split)
+    const mSum = this.ctx.createGain()
+    const sSum = this.ctx.createGain()
+    const lHalf = this.ctx.createGain()
+    const rHalfM = this.ctx.createGain()
+    const rHalfS = this.ctx.createGain()
+    const lHalfS = this.ctx.createGain()
+    lHalf.gain.value = 0.5
+    rHalfM.gain.value = 0.5
+    lHalfS.gain.value = 0.5
+    rHalfS.gain.value = -0.5
+    split.connect(lHalf, 0)
+    split.connect(rHalfM, 1)
+    lHalf.connect(mSum)
+    rHalfM.connect(mSum)
+    split.connect(lHalfS, 0)
+    split.connect(rHalfS, 1)
+    lHalfS.connect(sSum)
+    rHalfS.connect(sSum)
+    // chaîne du Side : highpass (bass mono) → shelf aigus → largeur globale
+    this.sHighpass = this.ctx.createBiquadFilter()
+    this.sHighpass.type = 'highpass'
+    this.sHighpass.frequency.value = 10 // 10 Hz ≈ neutre
+    this.sHighpass.Q.value = 0.71
+    this.sShelf = this.ctx.createBiquadFilter()
+    this.sShelf.type = 'highshelf'
+    this.sShelf.frequency.value = 5000
+    this.sShelf.gain.value = 0
+    this.sWidth = this.ctx.createGain()
+    sSum.connect(this.sHighpass)
+    this.sHighpass.connect(this.sShelf)
+    this.sShelf.connect(this.sWidth)
+    // retour L/R
+    const merger = this.ctx.createChannelMerger(2)
+    const sNeg = this.ctx.createGain()
+    sNeg.gain.value = -1
+    mSum.connect(merger, 0, 0)
+    this.sWidth.connect(merger, 0, 0)
+    mSum.connect(merger, 0, 1)
+    this.sWidth.connect(sNeg)
+    sNeg.connect(merger, 0, 1)
+    const src = merger
     // pool de filtres : configurés à la volée, gain 0 = transparent
     this.filters = Array.from({ length: MAX_FILTERS }, () => {
       const f = this.ctx!.createBiquadFilter()
@@ -250,6 +336,12 @@ class PreviewEngine {
       } else {
         this.filters[i].gain.value = 0
       }
+    }
+    if (this.sHighpass && this.sShelf && this.sWidth) {
+      const st = active ? corrections.stereo : null
+      this.sHighpass.frequency.value = st?.bassMonoHz ?? 10
+      this.sShelf.gain.value = st?.sHighShelfDb ?? 0
+      this.sWidth.gain.value = st?.sWidthGain ?? 1
     }
     if (active && corrections.comp) {
       this.compressor.threshold.value = corrections.comp.thresholdDb

@@ -213,8 +213,38 @@ function verdicts(a: AnalysisData, b: AnalysisData): string[] {
     if (Math.abs(d) >= 2.5)
       out.push(`${d > 0 ? '+' : ''}${d.toFixed(1)} dB de ${name} par rapport à la référence.`)
   }
+  // stéréo
+  if (a.corr < 0.2)
+    out.push(`Corrélation L/R faible (${a.corr.toFixed(2)}) : des éléments hors phase disparaîtront en mono — vérifiez les traitements d'élargissement.`)
+  if (a.widthLowDb > -20 && a.widthLowDb > b.widthLowDb + 3)
+    out.push(`Graves plus larges que la référence (${a.widthLowDb.toFixed(0)} dB S/M vs ${b.widthLowDb.toFixed(0)}) : monoïsez sous 100–150 Hz.`)
+  const dW = b.widthHighDb - a.widthHighDb
+  if (dW >= 3) out.push(`Image plus étroite que la référence dans les aigus (${dW.toFixed(1)} dB d'écart de largeur S/M).`)
+  else if (dW <= -3) out.push(`Image plus large que la référence dans les aigus — attention à la tenue en mono.`)
+  if (Math.abs(a.balanceDb) >= 1) out.push(`Balance décentrée de ${Math.abs(a.balanceDb).toFixed(1)} dB vers la ${a.balanceDb > 0 ? 'gauche' : 'droite'}.`)
+
   if (out.length === 0) out.push('Mix très proche de la référence sur tous les indicateurs — beau travail.')
   return out
+}
+
+/** Conseils stéréo ciblés — principes des classiques du mixage/mastering
+ *  (Bob Katz, Mike Senior), reformulés et déclenchés par les mesures. */
+function stereoTips(a: AnalysisData, b: AnalysisData): string[] {
+  const tips: string[] = []
+  if (a.widthLowDb > -20 && a.widthLowDb > b.widthLowDb + 3)
+    tips.push('Basses en mono sous ~120 Hz (EQ M/S ou utilitaire) : translation club et petits systèmes, punch centré — pratique standard du mastering (Katz).')
+  if (b.widthHighDb - a.widthHighDb >= 3) {
+    tips.push('Pour élargir sans casser le mono : doublez la partie et pan gauche/droite dur avec une prise différente, ou désaccordez ±8 ¢ — plus stable qu\'un « stereo widener ».')
+    tips.push('Effet Haas : copie retardée de 10–25 ms pannée à l\'opposé — large immédiatement, mais contrôlez la somme mono (risque de filtrage en peigne).')
+    tips.push('Réservez la largeur aux éléments d\'ambiance (pads, reverbs, delays ping-pong) ; lead, basse et kick restent au centre — panning LCR (Senior).')
+  }
+  if (a.corr < 0.3)
+    tips.push('Corrélation basse : réduisez les élargisseurs par déphasage, préférez des sources réellement différentes à gauche et à droite, et contrôlez toujours au corrélomètre en somme mono.')
+  if (Math.abs(a.balanceDb) >= 1)
+    tips.push('Rééquilibrez au bus master (balance) puis vérifiez : une balance qui penche vient souvent d\'un seul élément pané trop fort, pas du mix entier.')
+  if (tips.length === 0 && b.widthMidDb - a.widthMidDb >= 2)
+    tips.push('Largeur d\'ensemble : élargissez les médiums avec des doublages pannés plutôt qu\'un traitement global — la profondeur vient du contraste étroit/large entre éléments.')
+  return tips
 }
 
 /* ————— vue principale ————— */
@@ -402,12 +432,17 @@ export default function CompareView(): React.ReactNode {
                     {m.type === 'peaking' ? ` · Q ${m.q}` : ''}
                   </span>
                 ))}
+                {corrections.stereo?.labels.map((l) => (
+                  <span key={l} className="badge" style={{ color: side === 'AC' ? 'var(--accent)' : undefined }}>
+                    STÉRÉO {l}
+                  </span>
+                ))}
                 {corrections.comp && (
                   <span className="badge" style={{ color: side === 'AC' ? 'var(--accent)' : undefined }}>
                     COMP {corrections.comp.ratio}:1 @ {corrections.comp.thresholdDb} dB · make-up {corrections.comp.makeupDb > 0 ? '+' : ''}{corrections.comp.makeupDb} dB
                   </span>
                 )}
-                {corrections.eq.length === 0 && !corrections.comp && (
+                {corrections.eq.length === 0 && !corrections.comp && !corrections.stereo && (
                   <span className="mono" style={{ fontSize: 9, color: 'var(--ink-soft)' }}>aucune correction nécessaire — le mix colle déjà à la référence</span>
                 )}
               </div>
@@ -443,6 +478,11 @@ export default function CompareView(): React.ReactNode {
                 {metric('RMS', 'dB', dataA.rmsDb, dataB.rmsDb)}
                 {metric('FACTEUR DE CRÊTE', 'dB', dataA.crestDb, dataB.crestDb)}
                 {metric('PLR', 'dB', dataA.plr, dataB.plr)}
+                {metric('LARGEUR GRAVES (S/M)', 'dB', dataA.widthLowDb, dataB.widthLowDb)}
+                {metric('LARGEUR MÉDIUMS', 'dB', dataA.widthMidDb, dataB.widthMidDb)}
+                {metric('LARGEUR AIGUS', 'dB', dataA.widthHighDb, dataB.widthHighDb)}
+                {metric('CORRÉLATION L/R', '', dataA.corr, dataB.corr, false)}
+                {metric('BALANCE L/R', 'dB', dataA.balanceDb, dataB.balanceDb)}
                 {metric('BPM', 'BPM', dataA.bpm || undefined, dataB.bpm || undefined, false)}
                 <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr 1fr 1fr', gap: 8, padding: '7px 12px', alignItems: 'baseline' }}>
                   <span className="mono" style={{ fontSize: 9, letterSpacing: '.08em', color: 'var(--ink-soft)' }}>TONALITÉ</span>
@@ -464,6 +504,19 @@ export default function CompareView(): React.ReactNode {
                 ))}
               </ul>
             </div>
+
+            {stereoTips(dataA, dataB).length > 0 && (
+              <div style={{ border: 'var(--line)' }}>
+                <div className="mono" style={{ fontSize: 9, letterSpacing: '.1em', color: 'var(--accent)', padding: '8px 12px 2px' }}>
+                  CONSEILS STÉRÉO — SPREAD & PANNING
+                </div>
+                <ul style={{ margin: 0, padding: '6px 12px 10px 28px' }}>
+                  {stereoTips(dataA, dataB).map((v, i) => (
+                    <li key={i} style={{ font: '500 13px/1.7 var(--grotesk)' }}>{v}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
           </>
         ) : null}
       </div>

@@ -30,6 +30,11 @@ export interface AnalysisResultMsg {
     keyName: string
     camelot: string
     beatPhase: number
+    corr: number
+    balanceDb: number
+    widthLowDb: number
+    widthMidDb: number
+    widthHighDb: number
   }
 }
 
@@ -371,13 +376,59 @@ self.onmessage = (e: MessageEvent<AnalysisJob>) => {
     }
   }
 
+  /* ————— stéréo : corrélation, balance, largeur M/S par bande ————— */
+  let stCorr = 1
+  let balanceDb = 0
+  let widthLowDb = -60
+  let widthMidDb = -60
+  let widthHighDb = -60
+  if (nCh === 2) {
+    const L = channels[0]
+    const R = channels[1]
+    const aLo = 1 - Math.exp((-2 * Math.PI * 150) / fs)
+    const aHi = 1 - Math.exp((-2 * Math.PI * 2000) / fs)
+    let sLL = 0, sRR = 0, sLR = 0
+    let mLo = 0, mHi = 0, sLo = 0, sHi = 0
+    let eMLow = 0, eMMid = 0, eMHigh = 0
+    let eSLow = 0, eSMid = 0, eSHigh = 0
+    for (let i = 0; i < n; i++) {
+      const l = L[i]
+      const r = R[i]
+      sLL += l * l
+      sRR += r * r
+      sLR += l * r
+      const m = (l + r) * 0.5
+      const sd = (l - r) * 0.5
+      mLo += aLo * (m - mLo)
+      mHi += aHi * (m - mHi)
+      sLo += aLo * (sd - sLo)
+      sHi += aHi * (sd - sHi)
+      const mMid = mHi - mLo
+      const mHigh = m - mHi
+      const sMid = sHi - sLo
+      const sHigh = sd - sHi
+      eMLow += mLo * mLo
+      eMMid += mMid * mMid
+      eMHigh += mHigh * mHigh
+      eSLow += sLo * sLo
+      eSMid += sMid * sMid
+      eSHigh += sHigh * sHigh
+    }
+    stCorr = Math.round((sLR / Math.sqrt(sLL * sRR + 1e-12)) * 100) / 100
+    balanceDb = round1(10 * Math.log10((sLL + 1e-12) / (sRR + 1e-12)))
+    const w = (eS: number, eM: number): number => Math.max(-60, round1(10 * Math.log10((eS + 1e-12) / (eM + 1e-12))))
+    widthLowDb = w(eSLow, eMLow)
+    widthMidDb = w(eSMid, eMMid)
+    widthHighDb = w(eSHigh, eMHigh)
+  }
+
   const rms = Math.sqrt(totalEnergy / (n * nCh))
   const peakDb = round1(db(peak))
   const truePeakDb = round1(db(truePeak))
   const rmsDb = round1(db(rms))
 
   const result: AnalysisResultMsg['result'] = {
-    version: 4,
+    version: 5,
     lufsI: round1(lufsI),
     lufsSMax: round1(lufsSMax),
     lra: round1(lra),
@@ -391,7 +442,12 @@ self.onmessage = (e: MessageEvent<AnalysisJob>) => {
     bpm,
     keyName,
     camelot,
-    beatPhase
+    beatPhase,
+    corr: stCorr,
+    balanceDb,
+    widthLowDb,
+    widthMidDb,
+    widthHighDb
   }
   ;(self as unknown as Worker).postMessage({ id, result } satisfies AnalysisResultMsg)
 }

@@ -99,6 +99,14 @@ export interface AnalysisData {
   camelot: string
   /** Position du premier battement (secondes) — grille : beatPhase + k·60/bpm. */
   beatPhase: number
+  /** Corrélation L/R (−1…1) : < 0,2 = risque en mono. 1 si mono. */
+  corr: number
+  /** Balance d'énergie L/R (dB, positif = gauche plus fort). */
+  balanceDb: number
+  /** Largeur stéréo par bande : énergie Side/Mid en dB (−60 = mono). */
+  widthLowDb: number
+  widthMidDb: number
+  widthHighDb: number
 }
 
 export interface Settings {
