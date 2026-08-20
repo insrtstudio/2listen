@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { fmtNote } from '@/lib/notes'
 import { getAnalyser, resumeRta, rtaSampleRate } from '@/lib/rta'
 
 /**
@@ -25,7 +26,7 @@ export default function RtaPanel({ onClose }: { onClose: () => void }): React.Re
     const binHz = fs / (bins * 2)
     const fMin = 20
     const fMax = Math.min(20000, fs / 2)
-    const POINTS = 320
+    const POINTS = 640
     const hold = new Float32Array(POINTS).fill(-120)
     let raf = 0
 
@@ -91,15 +92,25 @@ export default function RtaPanel({ onClose }: { onClose: () => void }): React.Re
       }
       ctx2.globalAlpha = 1
 
-      // échantillonnage log + lissage court
+      // échantillonnage log fin : fenêtre 1/48 d'octave, interpolation
+      // linéaire entre bins quand la fenêtre est plus étroite qu'un bin
       const cur = new Float32Array(POINTS)
       for (let p = 0; p < POINTS; p++) {
         const f = fMin * Math.pow(fMax / fMin, p / (POINTS - 1))
-        const half = Math.pow(2, 1 / 24)
-        const k0 = Math.max(1, Math.floor(f / half / binHz))
-        const k1 = Math.min(bins - 1, Math.max(k0, Math.ceil((f * half) / binHz)))
+        const half = Math.pow(2, 1 / 48)
+        const k0f = f / half / binHz
+        const k1f = (f * half) / binHz
         let m = -160
-        for (let k = k0; k <= k1; k++) if (data[k] > m) m = data[k]
+        if (k1f - k0f < 1) {
+          const kf = f / binHz
+          const k = Math.max(1, Math.min(bins - 2, Math.floor(kf)))
+          const frac = kf - k
+          m = data[k] * (1 - frac) + data[k + 1] * frac
+        } else {
+          const k0 = Math.max(1, Math.floor(k0f))
+          const k1 = Math.min(bins - 1, Math.max(k0, Math.ceil(k1f)))
+          for (let k = k0; k <= k1; k++) if (data[k] > m) m = data[k]
+        }
         cur[p] = m
         // peak hold : montée instantanée, retombée ~12 dB/s
         hold[p] = m > hold[p] ? m : hold[p] - 0.2
@@ -152,7 +163,8 @@ export default function RtaPanel({ onClose }: { onClose: () => void }): React.Re
         ctx2.stroke()
         ctx2.globalAlpha = 1
         ctx2.fillStyle = ink
-        const label = `${f >= 1000 ? (f / 1000).toFixed(2) + ' kHz' : Math.round(f) + ' Hz'} · ${cur[p].toFixed(1)} dB`
+        const note = fmtNote(f)
+        const label = `${f >= 1000 ? (f / 1000).toFixed(2) + ' kHz' : Math.round(f) + ' Hz'}${note ? ` · ${note}` : ''} · ${cur[p].toFixed(1)} dB`
         ctx2.font = '9px "Fragment Mono", monospace'
         const tw = ctx2.measureText(label).width
         const lx = Math.min(w - tw - 8, x + 6)

@@ -180,7 +180,7 @@ export default function TrackTable({ tracks, onReorder, onRemove, sort, sortDir,
             const index = start + i
             const isPlaying = snap.track?.id === t.id
             const isSel = selected.has(t.id)
-            const draggable = Boolean(onReorder)
+            const draggable = true
             return (
               <div
                 key={t.id}
@@ -190,8 +190,10 @@ export default function TrackTable({ tracks, onReorder, onRemove, sort, sortDir,
                 onContextMenu={(e) => onContext(e, index, t.id)}
                 draggable={draggable}
                 onDragStart={(e) => {
-                  setDragIdx(index)
-                  e.dataTransfer.effectAllowed = 'move'
+                  // drag interne : l'id permet de déposer sur les zones A/B
+                  e.dataTransfer.setData('application/x-2listen-track', t.id)
+                  e.dataTransfer.effectAllowed = 'copyMove'
+                  if (onReorder) setDragIdx(index)
                 }}
                 onDragOver={(e) => {
                   if (dragIdx === null) return

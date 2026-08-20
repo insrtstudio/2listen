@@ -218,7 +218,7 @@ export default function MixView(): React.ReactNode {
             className="mono tap"
             onClick={() => setBeatLock(!lock)}
             disabled={!snapA.analysis?.bpm || !snapB.analysis?.bpm}
-            title="Calage automatique continu : la platine secondaire reste verrouillée sur la grille de l'autre"
+            title="Beat sync : un morceau lancé pendant que l'autre joue part déjà calé, puis reste verrouillé en continu sur la grille"
             style={{
               border: '2px solid var(--ink)',
               background: lock ? 'var(--accent)' : 'transparent',

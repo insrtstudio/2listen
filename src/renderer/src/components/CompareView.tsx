@@ -5,11 +5,14 @@ import { computeCorrections, preview } from '@/lib/preview'
 import { player } from '@/lib/player'
 import { useStore } from '@/lib/store'
 import TrackPicker from './TrackPicker'
+import { fmtNote } from '@/lib/notes'
 
 /* ————— spectre superposé + bande de delta ————— */
 function SpectrumChart({ a, b, aligned }: { a: AnalysisData; b: AnalysisData; aligned: boolean }): React.ReactNode {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const wrapRef = useRef<HTMLDivElement | null>(null)
+  const hoverRef = useRef<number | null>(null)
+  const redrawRef = useRef<() => void>(() => {})
 
   useEffect(() => {
     const draw = (): void => {
@@ -120,7 +123,32 @@ function SpectrumChart({ a, b, aligned }: { a: AnalysisData; b: AnalysisData; al
         ctx.fillStyle = ink
         ctx.fillText(f >= 1000 ? `${f / 1000}k` : String(f), X(i) + 2, chartH + deltaH + 14)
       }
+
+      // crosshair : fréquence · note (façon EQ Eight) · A / B / Δ
+      const hover = hoverRef.current
+      if (hover !== null) {
+        const i = Math.max(0, Math.min(sa.length - 1, Math.round(hover * (sa.length - 1))))
+        const f = a.freqs[i]
+        const x = X(i)
+        ctx.strokeStyle = ink
+        ctx.globalAlpha = 0.85
+        ctx.beginPath()
+        ctx.moveTo(x, 8)
+        ctx.lineTo(x, chartH + deltaH + 8)
+        ctx.stroke()
+        ctx.globalAlpha = 1
+        const note = fmtNote(f)
+        const label = `${f >= 1000 ? (f / 1000).toFixed(2) + ' kHz' : Math.round(f) + ' Hz'}${note ? ` · ${note}` : ''}  A ${sa[i].toFixed(1)}  B ${sb[i].toFixed(1)}  Δ ${(sa[i] - sb[i]) >= 0 ? '+' : ''}${(sa[i] - sb[i]).toFixed(1)} dB`
+        ctx.font = '9px "Fragment Mono", monospace'
+        const tw = ctx.measureText(label).width
+        const lx = Math.min(w - tw - 8, Math.max(padL, x + 6))
+        ctx.fillStyle = ink
+        ctx.fillRect(lx - 3, 10, tw + 6, 14)
+        ctx.fillStyle = styles.getPropertyValue('--paper').trim()
+        ctx.fillText(label, lx, 20)
+      }
     }
+    redrawRef.current = draw
     draw()
     const ro = new ResizeObserver(draw)
     if (wrapRef.current) ro.observe(wrapRef.current)
@@ -128,7 +156,19 @@ function SpectrumChart({ a, b, aligned }: { a: AnalysisData; b: AnalysisData; al
   }, [a, b, aligned])
 
   return (
-    <div ref={wrapRef} style={{ flex: 1, minHeight: 220, position: 'relative', overflow: 'hidden' }}>
+    <div
+      ref={wrapRef}
+      style={{ flex: 1, minHeight: 220, position: 'relative', overflow: 'hidden', cursor: 'crosshair' }}
+      onPointerMove={(e) => {
+        const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
+        hoverRef.current = Math.max(0, Math.min(1, (e.clientX - r.left - 30) / (r.width - 34)))
+        redrawRef.current()
+      }}
+      onPointerLeave={() => {
+        hoverRef.current = null
+        redrawRef.current()
+      }}
+    >
       <canvas ref={canvasRef} width={0} height={0} style={{ position: 'absolute', inset: 0, display: 'block' }} />
     </div>
   )
@@ -358,6 +398,7 @@ export default function CompareView(): React.ReactNode {
                   <span key={`${m.freq}-${i}`} className="badge" style={{ color: side === 'AC' ? 'var(--accent)' : undefined }}>
                     {m.type === 'lowshelf' ? 'SHELF↓' : m.type === 'highshelf' ? 'SHELF↑' : 'EQ'} {m.gainDb > 0 ? '+' : ''}
                     {m.gainDb} dB @ {m.freq >= 1000 ? `${(m.freq / 1000).toFixed(m.freq < 10000 ? 2 : 1)}k` : m.freq} Hz
+                    {fmtNote(m.freq) ? ` (${fmtNote(m.freq)})` : ''}
                     {m.type === 'peaking' ? ` · Q ${m.q}` : ''}
                   </span>
                 ))}

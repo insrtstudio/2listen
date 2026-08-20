@@ -196,7 +196,9 @@ export class Deck {
       this.emit()
       this.emitTime()
     } else {
-      this.startAt(this.pausedPos)
+      // beat sync au lancement (façon rekordbox) : si LOCK est armé et que
+      // l'autre platine joue, on démarre tempo calé ET en grille
+      this.startAt(launchSync(this, this.pausedPos))
     }
   }
 
@@ -211,7 +213,7 @@ export class Deck {
       this.cue = this.pausedPos
       this.emit()
     } else {
-      this.startAt(this.cue)
+      this.startAt(launchSync(this, this.cue))
     }
   }
 
@@ -358,6 +360,48 @@ export function beatDelta(a: Deck, b: Deck): { delta: number; ratio: 1 | 2 | 0.5
     if (d < best.delta) best = { delta: d, ratio }
   }
   return best
+}
+
+/**
+ * Beat sync au lancement : si LOCK est armé et que l'autre platine joue,
+ * adapte le tempo de `deck` (rapport 1x/2x/½x le plus proche) et décale la
+ * position de départ pour tomber en grille avec le master — le morceau part
+ * déjà calé, comme le Beat Sync de rekordbox.
+ */
+function launchSync(deck: Deck, pos: number): number {
+  const other = deck === deckA ? deckB : deckA
+  if (!lockOn || !other.playing) return pos
+  const bpmD = deck.analysis?.bpm
+  const bpmO = other.effectiveBpm()
+  if (!bpmD || !bpmO || !deck.analysis || !other.analysis?.bpm) return pos
+  // tempo : rapport le plus proche de 1 parmi 1x / 2x / ½x
+  const rate = [bpmO / bpmD, bpmO / (bpmD * 2), (bpmO * 2) / bpmD].reduce((best, cand) =>
+    Math.abs(Math.log(cand)) < Math.abs(Math.log(best)) ? cand : best
+  )
+  deck.setRate(rate, true)
+
+  // phase : positionne le départ sur la grille du master
+  const grid = commonGridFor(deck, other)
+  if (!grid) return pos
+  const beatSecD = (60 / deck.analysis.bpm) * grid.divSelf
+  const beatSecO = (60 / other.analysis.bpm) * grid.divOther
+  const fo = (((other.position() - other.analysis.beatPhase) / beatSecO) % 1 + 1) % 1
+  const fd = (((pos - deck.analysis.beatPhase) / beatSecD) % 1 + 1) % 1
+  let diff = fo - fd
+  if (diff > 0.5) diff -= 1
+  if (diff < -0.5) diff += 1
+  return Math.max(0, pos + diff * beatSecD)
+}
+
+/** Diviseurs de grille commune vus depuis `self`. */
+function commonGridFor(self: Deck, other: Deck): { divSelf: number; divOther: number } | null {
+  const es = self.analysis?.bpm ? self.analysis.bpm * self.rate : null
+  const eo = other.effectiveBpm()
+  if (!es || !eo) return null
+  const ratio = es / eo
+  if (ratio > 1.5) return { divSelf: 2, divOther: 1 }
+  if (ratio < 0.66) return { divSelf: 1, divOther: 2 }
+  return { divSelf: 1, divOther: 1 }
 }
 
 /* ————— LOCK : recalage automatique continu ————— */

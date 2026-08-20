@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from 'electron'
+import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import type { LibraryData, Playlist, ScanProgress, Settings, TagEdit, Track, UpdateState } from '../shared/types'
 
 const api = {
@@ -56,6 +56,12 @@ const api = {
   },
   app: {
     version: (): Promise<string> => ipcRenderer.invoke('app:version')
+  },
+  dnd: {
+    /** Chemin absolu d'un File déposé (drag & drop depuis le Finder). */
+    path: (file: File): string => webUtils.getPathForFile(file),
+    addPaths: (paths: string[]): Promise<Track[]> => ipcRenderer.invoke('lib:addPaths', paths),
+    idForPath: (path: string): Promise<string> => ipcRenderer.invoke('track:idForPath', path)
   }
 }
 

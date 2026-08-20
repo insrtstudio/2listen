@@ -7,11 +7,71 @@ import MixView from './MixView'
 import { AlbumView, AlbumsView, ArtistView, ArtistsView, PlaylistView, TracksView } from './Views'
 
 export default function App(): React.ReactNode {
-  const { view, tracks, roots } = useStore()
+  const { view, tracks, roots, addPaths } = useStore()
   const empty = roots.length === 0 && tracks.length === 0
+  const [dropping, setDropping] = useState(false)
+
+  // dépôt de fichiers audio n'importe où : ajout à la bibliothèque.
+  // Les zones A/B (pickers) stoppent la propagation pour gérer leur propre dépôt.
+  useEffect(() => {
+    let depth = 0
+    const hasFiles = (e: DragEvent): boolean => [...(e.dataTransfer?.types ?? [])].includes('Files')
+    const onEnter = (e: DragEvent): void => {
+      if (!hasFiles(e)) return
+      depth++
+      setDropping(true)
+    }
+    const onLeave = (e: DragEvent): void => {
+      if (!hasFiles(e)) return
+      depth = Math.max(0, depth - 1)
+      if (depth === 0) setDropping(false)
+    }
+    const onOver = (e: DragEvent): void => {
+      if (hasFiles(e)) e.preventDefault()
+    }
+    const onDrop = (e: DragEvent): void => {
+      depth = 0
+      setDropping(false)
+      if (!hasFiles(e)) return
+      e.preventDefault()
+      const paths = [...(e.dataTransfer?.files ?? [])].map((f) => window.tl.dnd.path(f)).filter(Boolean)
+      void addPaths(paths)
+    }
+    window.addEventListener('dragenter', onEnter)
+    window.addEventListener('dragleave', onLeave)
+    window.addEventListener('dragover', onOver)
+    window.addEventListener('drop', onDrop)
+    return () => {
+      window.removeEventListener('dragenter', onEnter)
+      window.removeEventListener('dragleave', onLeave)
+      window.removeEventListener('dragover', onOver)
+      window.removeEventListener('drop', onDrop)
+    }
+  }, [addPaths])
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', position: 'relative' }}>
+      {dropping && (
+        <div
+          className="mono"
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            right: 0,
+            zIndex: 80,
+            background: 'var(--accent)',
+            color: '#111',
+            font: '700 11px var(--grotesk)',
+            letterSpacing: '.1em',
+            textAlign: 'center',
+            padding: '8px 0',
+            pointerEvents: 'none'
+          }}
+        >
+          DÉPOSEZ VOS MORCEAUX — ils rejoignent la bibliothèque (ou visez un emplacement A/B)
+        </div>
+      )}
       <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
         <Sidebar />
         <main style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', minHeight: 0 }}>

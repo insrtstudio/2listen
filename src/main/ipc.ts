@@ -55,6 +55,35 @@ export function registerIpc(win: () => BrowserWindow | null): void {
     return added
   })
 
+  ipcMain.handle('lib:addPaths', async (_e, paths: string[]) => {
+    if (!Array.isArray(paths)) return library.get().tracks
+    const exts = new Set<string>(AUDIO_EXTENSIONS as readonly string[])
+    const valid: string[] = []
+    for (const p of paths.slice(0, 500)) {
+      if (typeof p !== 'string') continue
+      const ext = p.split('.').pop()?.toLowerCase() ?? ''
+      if (!exts.has(ext)) continue
+      try {
+        const st = await fs.stat(p)
+        if (st.isFile()) valid.push(p)
+      } catch {
+        /* introuvable */
+      }
+    }
+    if (valid.length > 0) {
+      const data = library.get()
+      const have = new Set(data.files)
+      library.set({
+        ...data,
+        files: [...data.files, ...valid.filter((f) => !have.has(f))],
+        excluded: data.excluded.filter((p) => !valid.includes(p))
+      })
+      await library.flush()
+      return scan(() => {})
+    }
+    return library.get().tracks
+  })
+
   ipcMain.handle('lib:removeTracks', async (_e, ids: string[]) => {
     const drop = new Set(ids)
     const data = library.get()

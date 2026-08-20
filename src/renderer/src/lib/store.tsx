@@ -30,6 +30,7 @@ interface Store {
   setSearch: (s: string) => void
   addRoot: () => Promise<void>
   addFiles: () => Promise<void>
+  addPaths: (paths: string[]) => Promise<void>
   removeTracks: (ids: string[]) => Promise<void>
   restoreExcluded: () => Promise<void>
   removeRoot: (root: string) => Promise<void>
@@ -141,6 +142,12 @@ export function StoreProvider({ children }: { children: ReactNode }): ReactNode 
     setTracks(fresh)
   }, [])
 
+  const addPaths = useCallback(async (paths: string[]) => {
+    if (paths.length === 0) return
+    const fresh = await window.tl.dnd.addPaths(paths)
+    setTracks(fresh)
+  }, [])
+
   const removeTracks = useCallback(async (ids: string[]) => {
     const lib = await window.tl.library.removeTracks(ids)
     setTracks(lib.tracks)
@@ -220,11 +227,11 @@ export function StoreProvider({ children }: { children: ReactNode }): ReactNode 
 
   const value = useMemo<Store>(() => ({
     tracks, roots, excludedCount, playlists, scan, settings, update, view, search, version,
-    setView, setSearch, addRoot, addFiles, removeTracks, restoreExcluded, removeRoot, rescan, patchSettings,
+    setView, setSearch, addRoot, addFiles, addPaths, removeTracks, restoreExcluded, removeRoot, rescan, patchSettings,
     createPlaylist, renamePlaylist, deletePlaylist, addToPlaylist,
     removeFromPlaylist, movePlaylistTrack, setRating, applyTagEdits
   }), [tracks, roots, excludedCount, playlists, scan, settings, update, view, search, version,
-    addRoot, addFiles, removeTracks, restoreExcluded, removeRoot, rescan, patchSettings, createPlaylist, renamePlaylist,
+    addRoot, addFiles, addPaths, removeTracks, restoreExcluded, removeRoot, rescan, patchSettings, createPlaylist, renamePlaylist,
     deletePlaylist, addToPlaylist, removeFromPlaylist, movePlaylistTrack, setRating, applyTagEdits])
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>

@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto'
+import { availableParallelism } from 'node:os'
 import { promises as fs, type Dirent } from 'node:fs'
 import { basename, extname, join } from 'node:path'
 import { parseFile, type IAudioMetadata } from 'music-metadata'
@@ -158,7 +159,10 @@ export async function scan(onProgress: (p: ScanProgress) => void): Promise<Track
     let done = 0
     const total = toRead.length
     onProgress({ phase: 'read', found, done, total, current: '' })
-    const fresh = await pool(toRead, 6, async (item) => {
+    // exploite les cœurs disponibles (la lecture de tags est surtout I/O,
+    // mais les gros dossiers profitent nettement du parallélisme)
+    const concurrency = Math.max(4, availableParallelism() - 2)
+    const fresh = await pool(toRead, concurrency, async (item) => {
       const track = await readTrack(item.path, item.root, item)
       const prev = known.get(item.path)
       done++

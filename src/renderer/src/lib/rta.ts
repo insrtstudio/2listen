@@ -15,8 +15,10 @@ export function getAnalyser(): AnalyserNode | null {
     const elements = (player as unknown as { a: HTMLAudioElement; b: HTMLAudioElement })
     ctx = new AudioContext()
     analyser = ctx.createAnalyser()
-    analyser.fftSize = 8192
-    analyser.smoothingTimeConstant = 0.55
+    // résolution maximale de l'AnalyserNode : bandes d'environ 1,5 Hz.
+    // La FFT est native (Chromium), le coût reste négligeable.
+    analyser.fftSize = 32768
+    analyser.smoothingTimeConstant = 0.5
     analyser.minDecibels = -100
     analyser.maxDecibels = -5
     const merge = ctx.createGain()

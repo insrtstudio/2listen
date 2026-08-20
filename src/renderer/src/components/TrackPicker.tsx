@@ -1,6 +1,8 @@
 import { useMemo, useState } from 'react'
 import { useStore } from '@/lib/store'
 
+const INTERNAL = 'application/x-2listen-track'
+
 /** Sélecteur de piste (recherche + liste), partagé entre Comparer et la table de mix. */
 export default function TrackPicker({
   label,
@@ -16,10 +18,29 @@ export default function TrackPicker({
   /** sans bordure extérieure ni pastille (déjà fournies par le parent) */
   bare?: boolean
 }): React.ReactNode {
-  const { tracks } = useStore()
+  const { tracks, addPaths } = useStore()
   const [q, setQ] = useState('')
   const [open, setOpen] = useState(false)
+  const [hot, setHot] = useState(false)
   const picked = tracks.find((t) => t.id === trackId) ?? null
+
+  const acceptsDrag = (e: React.DragEvent): boolean =>
+    e.dataTransfer.types.includes(INTERNAL) || e.dataTransfer.types.includes('Files')
+
+  const onDrop = async (e: React.DragEvent): Promise<void> => {
+    e.preventDefault()
+    e.stopPropagation()
+    setHot(false)
+    const internal = e.dataTransfer.getData(INTERNAL)
+    if (internal) {
+      onPick(internal)
+      return
+    }
+    const paths = [...e.dataTransfer.files].map((f) => window.tl.dnd.path(f)).filter(Boolean)
+    if (paths.length === 0) return
+    await addPaths(paths)
+    onPick(await window.tl.dnd.idForPath(paths[0]))
+  }
 
   const results = useMemo(() => {
     const needle = q.trim().toLowerCase()
@@ -30,7 +51,26 @@ export default function TrackPicker({
   }, [tracks, q])
 
   return (
-    <div style={{ flex: 1, minWidth: 0, border: bare ? 'none' : 'var(--line)', position: 'relative', background: 'var(--paper)' }}>
+    <div
+      data-dropzone={label}
+      onDragOver={(e) => {
+        if (!acceptsDrag(e)) return
+        e.preventDefault()
+        e.stopPropagation()
+        setHot(true)
+      }}
+      onDragLeave={() => setHot(false)}
+      onDrop={(e) => void onDrop(e)}
+      style={{
+        flex: 1,
+        minWidth: 0,
+        border: bare ? 'none' : 'var(--line)',
+        position: 'relative',
+        background: 'var(--paper)',
+        outline: hot ? '3px solid var(--accent)' : 'none',
+        outlineOffset: -3
+      }}
+    >
       <div
         style={{
           display: 'flex',
