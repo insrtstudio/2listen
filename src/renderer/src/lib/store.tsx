@@ -26,6 +26,9 @@ interface Store {
   view: View
   search: string
   version: string
+  /** Mode streamer : la scène Instagram remplace toute l'interface. */
+  streamer: boolean
+  setStreamer: (on: boolean) => void
   setView: (v: View) => void
   setSearch: (s: string) => void
   addRoot: () => Promise<void>
@@ -65,6 +68,7 @@ export function StoreProvider({ children }: { children: ReactNode }): ReactNode 
   })
   const [update, setUpdate] = useState<UpdateState>({ status: 'idle' })
   const [view, setView] = useState<View>({ kind: 'tracks' })
+  const [streamer, setStreamer] = useState(false)
   const [search, setSearch] = useState('')
   const [version, setVersion] = useState('')
   const loaded = useRef(false)
@@ -226,11 +230,11 @@ export function StoreProvider({ children }: { children: ReactNode }): ReactNode 
   }, [])
 
   const value = useMemo<Store>(() => ({
-    tracks, roots, excludedCount, playlists, scan, settings, update, view, search, version,
-    setView, setSearch, addRoot, addFiles, addPaths, removeTracks, restoreExcluded, removeRoot, rescan, patchSettings,
+    tracks, roots, excludedCount, playlists, scan, settings, update, view, search, version, streamer,
+    setStreamer, setView, setSearch, addRoot, addFiles, addPaths, removeTracks, restoreExcluded, removeRoot, rescan, patchSettings,
     createPlaylist, renamePlaylist, deletePlaylist, addToPlaylist,
     removeFromPlaylist, movePlaylistTrack, setRating, applyTagEdits
-  }), [tracks, roots, excludedCount, playlists, scan, settings, update, view, search, version,
+  }), [tracks, roots, excludedCount, playlists, scan, settings, update, view, search, version, streamer,
     addRoot, addFiles, addPaths, removeTracks, restoreExcluded, removeRoot, rescan, patchSettings, createPlaylist, renamePlaylist,
     deletePlaylist, addToPlaylist, removeFromPlaylist, movePlaylistTrack, setRating, applyTagEdits])
 

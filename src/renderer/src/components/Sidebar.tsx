@@ -3,7 +3,7 @@ import { useStore } from '@/lib/store'
 
 export default function Sidebar(): React.ReactNode {
   const store = useStore()
-  const { view, setView, playlists, tracks, scan, createPlaylist, update, version } = store
+  const { view, setView, playlists, tracks, scan, createPlaylist, update, version, setStreamer } = store
   const [creating, setCreating] = useState(false)
   const [name, setName] = useState('')
 
@@ -59,6 +59,9 @@ export default function Sidebar(): React.ReactNode {
         </button>
         <button className={`navitem ${view.kind === 'mix' ? 'on' : ''}`} onClick={() => setView({ kind: 'mix' })}>
           Table de mix <span className="cnt">DJ</span>
+        </button>
+        <button className="navitem" onClick={() => setStreamer(true)} title="Scène au format Instagram, webcam et enregistrement de clips">
+          Mode streamer <span className="cnt">REC</span>
         </button>
 
         <div className="mono" style={{ fontSize: 9, letterSpacing: '.12em', color: 'var(--ink-soft)', padding: '18px 14px 6px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>

@@ -28,6 +28,10 @@ mac:
   darkModeSupport: true
   # Pas de certificat Developer ID → build non signé (voir README)
   identity: null
+  # Mode streamer : webcam + micro (TCC macOS refuse l'accès sans ces textes)
+  extendInfo:
+    NSCameraUsageDescription: 2Listen filme votre webcam pour les clips du mode streamer.
+    NSMicrophoneUsageDescription: 2Listen peut mixer votre micro dans les clips du mode streamer.
 
 
 npmRebuild: false

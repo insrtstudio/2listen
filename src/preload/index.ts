@@ -57,6 +57,21 @@ const api = {
   app: {
     version: (): Promise<string> => ipcRenderer.invoke('app:version')
   },
+  clip: {
+    /** Ouvre un fichier temporaire, renvoie son identifiant. */
+    start: (ext: string): Promise<string> => ipcRenderer.invoke('clip:start', ext),
+    chunk: (id: string, data: ArrayBuffer): Promise<void> => ipcRenderer.invoke('clip:chunk', id, data),
+    /** Dialogue « Enregistrer sous » ; chemin final ou null si annulé. */
+    finish: (id: string, suggestedName: string): Promise<string | null> => ipcRenderer.invoke('clip:finish', id, suggestedName),
+    cancel: (id: string): Promise<void> => ipcRenderer.invoke('clip:cancel', id)
+  },
+  media: {
+    access: (kind: 'camera' | 'microphone'): Promise<boolean> => ipcRenderer.invoke('media:access', kind)
+  },
+  win: {
+    /** Verrouille (ou libère) le ratio de la fenêtre sur le format de la scène streamer. */
+    streamer: (on: boolean, ratio: number, extraH: number): Promise<void> => ipcRenderer.invoke('win:streamer', on, ratio, extraH)
+  },
   dnd: {
     /** Chemin absolu d'un File déposé (drag & drop depuis le Finder). */
     path: (file: File): string => webUtils.getPathForFile(file),

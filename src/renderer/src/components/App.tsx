@@ -4,10 +4,11 @@ import PlayerBar from './PlayerBar'
 import Sidebar from './Sidebar'
 import CompareView from './CompareView'
 import MixView from './MixView'
+import StreamerView from './StreamerView'
 import { AlbumView, AlbumsView, ArtistView, ArtistsView, PlaylistView, TracksView } from './Views'
 
 export default function App(): React.ReactNode {
-  const { view, tracks, roots, addPaths } = useStore()
+  const { view, tracks, roots, addPaths, streamer } = useStore()
   const empty = roots.length === 0 && tracks.length === 0
   const [dropping, setDropping] = useState(false)
 
@@ -101,6 +102,7 @@ export default function App(): React.ReactNode {
         </main>
       </div>
       <PlayerBar />
+      {streamer && <StreamerView />}
     </div>
   )
 }
