@@ -1,6 +1,6 @@
 import type { AnalysisData, Peaks, Track } from '@shared/types'
 import { fmtDuration, fmtQuality } from './format'
-import { drawWaveBars, themeWaveColors, type WaveColors } from './wavedraw'
+import { drawWaveBars, type WaveColors } from './wavedraw'
 
 /**
  * Scène du mode streamer : une publication Instagram rendue sur un canvas
@@ -10,8 +10,8 @@ import { drawWaveBars, themeWaveColors, type WaveColors } from './wavedraw'
 export type StageFormat = 'post' | 'square' | 'story'
 
 export const FORMATS: Record<StageFormat, { w: number; h: number; label: string; name: string }> = {
-  post: { w: 1080, h: 1350, label: '4:5', name: 'Publication' },
-  square: { w: 1080, h: 1080, label: '1:1', name: 'Carré' },
+  post: { w: 1080, h: 1350, label: '4:5', name: 'Post' },
+  square: { w: 1080, h: 1080, label: '1:1', name: 'Square' },
   story: { w: 1080, h: 1920, label: '9:16', name: 'Story / Reel' }
 }
 
@@ -79,10 +79,26 @@ interface ThemeColors extends WaveColors {
   paper3: string
 }
 
-function themeColors(): ThemeColors {
-  const styles = getComputedStyle(document.documentElement)
+/** Tonalité en anglais pour la scène (l'analyse nomme les notes en français). */
+const NOTE_EN: Record<string, string> = {
+  Do: 'C', 'Do#': 'C#', 'Ré': 'D', 'Ré#': 'D#', Mi: 'E', Fa: 'F', 'Fa#': 'F#',
+  Sol: 'G', 'Sol#': 'G#', La: 'A', 'La#': 'A#', Si: 'B'
+}
+export function keyNameEn(keyName: string): string {
+  const m = keyName.match(/^(\S+)\s+(mineur|majeur)$/)
+  if (!m) return keyName
+  const note = NOTE_EN[m[1]] ?? m[1]
+  return `${note} ${m[2] === 'mineur' ? 'minor' : 'major'}`
+}
+
+function themeColors(el: Element): ThemeColors {
+  // tout est lu sur le canvas : l'overlay streamer porte son propre
+  // [data-theme], indépendant du thème de l'app
+  const styles = getComputedStyle(el)
   return {
-    ...themeWaveColors(),
+    ink: styles.getPropertyValue('--ink').trim() || '#111',
+    soft: styles.getPropertyValue('--ink-soft').trim() || '#77726a',
+    accent: styles.getPropertyValue('--accent').trim() || '#ff4d00',
     paper: styles.getPropertyValue('--paper').trim() || '#ece9e2',
     paper3: styles.getPropertyValue('--paper-3').trim() || '#dbd7cc'
   }
@@ -188,7 +204,7 @@ export class Stage {
   draw(s: StageState): void {
     const ctx = this.ctx
     const { w: W, h: H } = FORMATS[this.format]
-    const c = themeColors()
+    const c = themeColors(this.canvas)
     const M = 64
     const t = s.track
 
@@ -210,8 +226,8 @@ export class Stage {
     ctx.fillText('2LISTEN', M, M + 18)
     const brandW = ctx.measureText('2LISTEN').width
     ctx.fillStyle = c.soft
-    ctx.fillText('— EN ÉCOUTE', M + brandW + 14, M + 18)
-    const labelW = brandW + 14 + ctx.measureText('— EN ÉCOUTE').width
+    ctx.fillText('— NOW PLAYING', M + brandW + 14, M + 18)
+    const labelW = brandW + 14 + ctx.measureText('— NOW PLAYING').width
 
     // carré orange qui bat la mesure (grille BPM de l'analyse)
     const a = s.analysis
@@ -246,7 +262,7 @@ export class Stage {
     }
     const textW = W - M - textX
     const maxLines = this.format === 'square' ? 1 : 2
-    const title = t ? t.title : 'Aucun morceau'
+    const title = t ? t.title : 'No track'
     const fit = fitTitle(ctx, title, textW, maxLines)
     ctx.font = `700 ${fit.size}px "Space Grotesk"`
     ctx.fillStyle = t ? c.ink : c.soft
@@ -257,7 +273,7 @@ export class Stage {
     }
     ctx.font = 'italic 400 40px "Instrument Serif"'
     ctx.fillStyle = c.soft
-    const artist = t ? t.artist || t.albumArtist || '' : 'Choisissez un morceau dans la barre du bas'
+    const artist = t ? t.artist || t.albumArtist || '' : 'Pick a track in the bottom bar'
     ctx.fillText(ellipsize(ctx, artist, textW), textX, ty + 14)
     const titleBottom = Math.max(y0 + coverSize, ty + 26)
 
@@ -309,7 +325,7 @@ export class Stage {
       ctx.font = 'italic 400 44px "Instrument Serif"'
       ctx.fillStyle = c.soft
       ctx.textAlign = 'center'
-      ctx.fillText(v ? 'Caméra…' : 'Pas de caméra', inner.x + inner.w / 2, inner.y + inner.h / 2 + 14)
+      ctx.fillText(v ? 'Camera…' : 'No camera', inner.x + inner.w / 2, inner.y + inner.h / 2 + 14)
       ctx.textAlign = 'left'
     }
   }
@@ -334,7 +350,7 @@ export class Stage {
       if (s.track) {
         ctx.font = '400 18px "Fragment Mono"'
         ctx.fillStyle = c.soft
-        ctx.fillText('ANALYSE DE L’ONDE…', inner.x + 16, inner.y + 30)
+        ctx.fillText('ANALYZING WAVEFORM…', inner.x + 16, inner.y + 30)
       }
       return
     }
@@ -356,7 +372,7 @@ export class Stage {
     const pending = !!t && !a
     const cells: Array<{ label: string; value: string; sub?: string; hot?: boolean }> = [
       { label: 'BPM', value: a && a.bpm > 0 ? String(Math.round(a.bpm)) : pending ? '…' : '—', hot: true },
-      { label: 'TONALITÉ', value: a?.camelot || (pending ? '…' : '—'), sub: a?.keyName },
+      { label: 'KEY', value: a?.camelot || (pending ? '…' : '—'), sub: a ? keyNameEn(a.keyName) : undefined },
       { label: 'VERSION', value: s.version || '—' },
       { label: 'FORMAT', value: t ? fmtQuality(t) : '—' }
     ]

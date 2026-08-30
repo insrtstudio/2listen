@@ -17,16 +17,19 @@ interface Prefs {
   camera: string
   mirror: boolean
   mic: boolean
+  /** Thème de la scène et de l'interface streamer, indépendant de l'app. */
+  theme: 'light' | 'dark'
 }
 
-function loadPrefs(): Prefs {
+function loadPrefs(appTheme: 'light' | 'dark'): Prefs {
+  const def: Prefs = { format: 'post', camera: '', mirror: true, mic: false, theme: appTheme }
   try {
     const raw = localStorage.getItem(PREF)
-    if (raw) return { format: 'post', camera: '', mirror: true, mic: false, ...(JSON.parse(raw) as Partial<Prefs>) }
+    if (raw) return { ...def, ...(JSON.parse(raw) as Partial<Prefs>) }
   } catch {
     /* préférences illisibles */
   }
-  return { format: 'post', camera: '', mirror: true, mic: false }
+  return def
 }
 
 /** Petit bouton de commande, style bloc. */
@@ -66,11 +69,11 @@ function Cmd({
 }
 
 export default function StreamerView(): React.ReactNode {
-  const { setStreamer, tracks } = useStore()
+  const { setStreamer, tracks, settings } = useStore()
   const snap = useSyncExternalStore(player.subscribe, player.getSnapshot)
   const track = snap.track
 
-  const [prefs, setPrefs] = useState<Prefs>(loadPrefs)
+  const [prefs, setPrefs] = useState<Prefs>(() => loadPrefs(settings.theme))
   const patch = (p: Partial<Prefs>): void => setPrefs((v) => ({ ...v, ...p }))
   useEffect(() => {
     try {
@@ -234,10 +237,10 @@ export default function StreamerView(): React.ReactNode {
           const msg = err instanceof Error ? err.message : ''
           setCamError(
             /not found/i.test(msg)
-              ? 'aucune caméra détectée — branchez-en une (ou un iPhone en Continuité)'
+              ? 'no camera found — plug one in (or use an iPhone via Continuity)'
               : /denied|permission/i.test(msg)
-                ? 'accès refusé — Réglages Système › Confidentialité › Caméra'
-                : msg || 'caméra inaccessible'
+                ? 'access denied — System Settings › Privacy › Camera'
+                : msg || 'camera unavailable'
           )
         }
       }
@@ -274,7 +277,7 @@ export default function StreamerView(): React.ReactNode {
         micStreamRef.current = stream
         setMicError(null)
       } catch (err) {
-        if (alive) setMicError(err instanceof Error ? err.message : 'Micro inaccessible')
+        if (alive) setMicError(err instanceof Error ? err.message : 'mic unavailable')
       }
     })()
     return () => {
@@ -292,7 +295,7 @@ export default function StreamerView(): React.ReactNode {
     try {
       await r.start(canvas, prefs.mic ? micStreamRef.current : null)
     } catch (err) {
-      setNotice({ text: err instanceof Error ? err.message : 'Enregistrement impossible', error: true })
+      setNotice({ text: err instanceof Error ? err.message : 'Could not start recording', error: true })
       return
     }
     recorderRef.current = r
@@ -305,9 +308,9 @@ export default function StreamerView(): React.ReactNode {
     setRec('saving')
     try {
       const path = await r.stop(clipName(track, version, ext))
-      setNotice(path ? { text: 'Clip exporté', path } : { text: 'Export annulé' })
+      setNotice(path ? { text: 'Clip exported', path } : { text: 'Export canceled' })
     } catch (err) {
-      setNotice({ text: err instanceof Error ? err.message : 'Export impossible', error: true })
+      setNotice({ text: err instanceof Error ? err.message : 'Export failed', error: true })
     } finally {
       recorderRef.current = null
       setRec('idle')
@@ -371,14 +374,14 @@ export default function StreamerView(): React.ReactNode {
   const sep = <span style={{ width: 2, alignSelf: 'stretch', background: 'var(--ink)', opacity: 0.25, flex: 'none' }} />
 
   return (
-    <div style={{ position: 'fixed', inset: 0, zIndex: 90, background: 'var(--paper)', display: 'flex', flexDirection: 'column' }}>
+    <div data-theme={prefs.theme} style={{ position: 'fixed', inset: 0, zIndex: 90, background: 'var(--paper)', color: 'var(--ink)', display: 'flex', flexDirection: 'column' }}>
       {/* barre du haut : zone de drag, feux macOS à gauche */}
       <div
         className="drag"
         style={{ height: TOP, flex: 'none', borderBottom: 'var(--line-thick)', display: 'flex', alignItems: 'center', gap: 10, padding: '0 12px 0 88px' }}
       >
         <span className="mono" style={{ fontSize: 9, letterSpacing: '.16em', color: 'var(--accent)', whiteSpace: 'nowrap' }}>
-          MODE STREAMER
+          STREAMER MODE
         </span>
         <span className="mono" style={{ fontSize: 9, color: 'var(--ink-soft)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
           {fmt.name} · {fmt.w}×{fmt.h} · {ext.toUpperCase()}
@@ -389,8 +392,8 @@ export default function StreamerView(): React.ReactNode {
             ● REC
           </span>
         )}
-        <button className="blk tap no-drag" onClick={() => setStreamer(false)} disabled={rec !== 'idle'} title="Échap" style={{ padding: '5px 10px', fontSize: 11 }}>
-          Quitter
+        <button className="blk tap no-drag" onClick={() => setStreamer(false)} disabled={rec !== 'idle'} title="Esc" style={{ padding: '5px 10px', fontSize: 11 }}>
+          Exit
         </button>
       </div>
 
@@ -406,7 +409,7 @@ export default function StreamerView(): React.ReactNode {
         />
         {(camError || micError) && (
           <div className="mono" style={{ position: 'absolute', left: 10, top: 10, fontSize: 9, background: 'var(--ink)', color: 'var(--paper)', padding: '4px 8px', maxWidth: '80%' }}>
-            {camError ? `CAMÉRA : ${camError}` : `MICRO : ${micError}`}
+            {camError ? `CAMERA: ${camError}` : `MIC: ${micError}`}
           </div>
         )}
         {notice && (
@@ -424,7 +427,7 @@ export default function StreamerView(): React.ReactNode {
             </span>
             {notice.path && (
               <button className="tap" style={{ color: 'var(--accent)', font: '700 11px var(--grotesk)', letterSpacing: '.06em' }} onClick={() => void window.tl.track.reveal(notice.path!)}>
-                AFFICHER
+                REVEAL
               </button>
             )}
             <button className="tap" style={{ font: '700 12px var(--grotesk)' }} onClick={() => setNotice(null)}>
@@ -437,7 +440,7 @@ export default function StreamerView(): React.ReactNode {
             <input
               autoFocus
               className="field"
-              placeholder="Rechercher un morceau…"
+              placeholder="Search tracks…"
               value={q}
               onChange={(e) => setQ(e.target.value)}
               onKeyDown={(e) => {
@@ -461,7 +464,7 @@ export default function StreamerView(): React.ReactNode {
                 </button>
               ))}
               {results.length === 0 && (
-                <div className="serif" style={{ fontStyle: 'italic', color: 'var(--ink-soft)', padding: '8px 12px' }}>Rien trouvé.</div>
+                <div className="serif" style={{ fontStyle: 'italic', color: 'var(--ink-soft)', padding: '8px 12px' }}>Nothing found.</div>
               )}
             </div>
           </div>
@@ -472,38 +475,38 @@ export default function StreamerView(): React.ReactNode {
       <div style={{ height: CTRL, flex: 'none', borderTop: 'var(--line-thick)', display: 'flex', flexDirection: 'column' }}>
         <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 8, padding: '0 10px', borderBottom: 'var(--line)', minWidth: 0, overflow: 'hidden' }}>
           {rec === 'idle' ? (
-            <Cmd acc onClick={() => void startRec()} disabled={!track || !mime} title={mime ? 'Démarrer l’enregistrement' : 'MediaRecorder indisponible'}>
-              ● Enregistrer
+            <Cmd acc onClick={() => void startRec()} disabled={!track || !mime} title={mime ? 'Start recording' : 'MediaRecorder unavailable'}>
+              ● Record
             </Cmd>
           ) : (
-            <Cmd on onClick={() => void stopRec()} disabled={rec === 'saving'} title="Arrêter et exporter">
-              ■ {rec === 'saving' ? 'Export…' : 'Stop'}
+            <Cmd on onClick={() => void stopRec()} disabled={rec === 'saving'} title="Stop and export">
+              ■ {rec === 'saving' ? 'Exporting…' : 'Stop'}
             </Cmd>
           )}
           <span className="mono" style={{ fontSize: 12, minWidth: 44, color: rec === 'rec' ? 'var(--accent)' : 'var(--ink-soft)' }}>
             {fmtDuration(recSec)}
           </span>
           {sep}
-          <Cmd onClick={() => player.prev()} title="Précédent">⏮</Cmd>
-          <Cmd onClick={() => player.toggle()} title="Lecture / pause (Espace)" on={snap.playing}>
+          <Cmd onClick={() => player.prev()} title="Previous">⏮</Cmd>
+          <Cmd onClick={() => player.toggle()} title="Play / pause (Space)" on={snap.playing}>
             {snap.playing ? '❚❚' : '▶'}
           </Cmd>
-          <Cmd onClick={() => player.next()} title="Suivant">⏭</Cmd>
+          <Cmd onClick={() => player.next()} title="Next">⏭</Cmd>
           {sep}
           <button
             className="tap"
             onClick={() => setPicker((v) => !v)}
-            title="Choisir un morceau"
+            title="Pick a track"
             style={{ flex: 1, minWidth: 0, textAlign: 'left', display: 'flex', flexDirection: 'column', gap: 1 }}
           >
             <span style={{ font: '700 12px/1.2 var(--grotesk)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', width: '100%' }}>
-              {track ? track.title : 'Choisir un morceau…'}
+              {track ? track.title : 'Pick a track…'}
             </span>
             <span className="mono" style={{ fontSize: 9, color: 'var(--ink-soft)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', width: '100%' }}>
-              {track ? track.artist : 'clic pour ouvrir la liste'}
+              {track ? track.artist : 'click to open the list'}
             </span>
           </button>
-          <Cmd onClick={() => setPicker((v) => !v)} on={picker}>Morceau</Cmd>
+          <Cmd onClick={() => setPicker((v) => !v)} on={picker}>Track</Cmd>
         </div>
         <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 8, padding: '0 10px', minWidth: 0, overflow: 'hidden' }}>
           <span style={{ display: 'flex', flex: 'none' }}>
@@ -529,19 +532,22 @@ export default function StreamerView(): React.ReactNode {
             className="field"
             value={prefs.camera}
             onChange={(e) => patch({ camera: e.target.value })}
-            title="Caméra"
+            title="Camera"
             style={{ flex: 1, minWidth: 80, padding: '5px 8px', fontSize: 11, height: 30 }}
           >
-            <option value="">Caméra par défaut</option>
+            <option value="">Default camera</option>
             {cams.map((c, i) => (
               <option key={c.deviceId} value={c.deviceId}>
-                {c.label || `Caméra ${i + 1}`}
+                {c.label || `Camera ${i + 1}`}
               </option>
             ))}
           </select>
-          <Cmd on={prefs.mirror} onClick={() => patch({ mirror: !prefs.mirror })} title="Image en miroir (selfie)">Miroir</Cmd>
-          <Cmd on={prefs.mic} onClick={() => patch({ mic: !prefs.mic })} title="Mixer le micro dans le clip" disabled={rec !== 'idle'}>
-            Micro
+          <Cmd on={prefs.theme === 'dark'} onClick={() => patch({ theme: prefs.theme === 'dark' ? 'light' : 'dark' })} title="Dark stage theme">
+            Dark
+          </Cmd>
+          <Cmd on={prefs.mirror} onClick={() => patch({ mirror: !prefs.mirror })} title="Mirror the image (selfie)">Mirror</Cmd>
+          <Cmd on={prefs.mic} onClick={() => patch({ mic: !prefs.mic })} title="Mix the mic into the clip" disabled={rec !== 'idle'}>
+            Mic
           </Cmd>
           {sep}
           <input
@@ -549,7 +555,7 @@ export default function StreamerView(): React.ReactNode {
             value={version}
             onChange={(e) => editVersion(e.target.value)}
             placeholder="Version (v3, Club Mix…)"
-            title="Version affichée sur la scène"
+            title="Version shown on the stage"
             style={{ width: 150, flex: 'none', padding: '5px 8px', fontSize: 11, height: 30 }}
           />
         </div>
