@@ -18,6 +18,7 @@ const api = {
     updateTrack: (id: string, patch: Partial<Pick<Track, 'playCount' | 'lastPlayedAt' | 'rating'>>): Promise<void> =>
       ipcRenderer.invoke('lib:updateTrack', id, patch),
     editTags: (id: string, patch: TagEdit): Promise<Track[]> => ipcRenderer.invoke('lib:editTags', id, patch),
+    editTagsMany: (ids: string[], patch: TagEdit): Promise<Track[]> => ipcRenderer.invoke('lib:editTagsMany', ids, patch),
     pickCover: (): Promise<string | null> => ipcRenderer.invoke('cover:pick')
   },
   playlists: {

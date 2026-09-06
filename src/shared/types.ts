@@ -109,6 +109,13 @@ export interface AnalysisData {
   widthHighDb: number
 }
 
+/** Colonnes affichables dans les listes de pistes (le titre est toujours visible). */
+export type ColumnKey =
+  | 'artist' | 'albumArtist' | 'album' | 'genre' | 'year'
+  | 'quality' | 'duration' | 'addedAt' | 'playCount' | 'lastPlayedAt' | 'rating'
+
+export const DEFAULT_COLUMNS: ColumnKey[] = ['artist', 'album', 'quality', 'duration', 'addedAt', 'playCount']
+
 export interface Settings {
   volume: number
   repeat: 'off' | 'all' | 'one'
@@ -122,6 +129,8 @@ export interface Settings {
   /** Outil A/B : pistes mémorisées. */
   compareA: TrackId | null
   compareB: TrackId | null
+  /** Colonnes affichées dans les listes de pistes, dans l'ordre. */
+  columns: ColumnKey[]
 }
 
 export interface UpdateState {

@@ -2,7 +2,7 @@ import {
   createContext, useCallback, useContext, useEffect, useMemo, useRef, useState,
   type ReactNode
 } from 'react'
-import type { Playlist, ScanProgress, Settings, TagEdit, Track, UpdateState } from '@shared/types'
+import { DEFAULT_COLUMNS, type Playlist, type ScanProgress, type Settings, type TagEdit, type Track, type UpdateState } from '@shared/types'
 import { player } from './player'
 
 export type View =
@@ -47,6 +47,7 @@ interface Store {
   movePlaylistTrack: (id: string, from: number, to: number) => void
   setRating: (trackId: string, rating: number) => void
   applyTagEdits: (trackId: string, patch: TagEdit) => Promise<void>
+  applyTagEditsMany: (trackIds: string[], patch: TagEdit) => Promise<void>
 }
 
 const Ctx = createContext<Store | null>(null)
@@ -64,7 +65,7 @@ export function StoreProvider({ children }: { children: ReactNode }): ReactNode 
   const [settings, setSettings] = useState<Settings>({
     volume: 0.85, repeat: 'off', shuffle: false, theme: 'light',
     lastTrackId: null, matchSampleRate: true, gapless: true,
-    compareA: null, compareB: null
+    compareA: null, compareB: null, columns: DEFAULT_COLUMNS
   })
   const [update, setUpdate] = useState<UpdateState>({ status: 'idle' })
   const [view, setView] = useState<View>({ kind: 'tracks' })
@@ -224,6 +225,11 @@ export function StoreProvider({ children }: { children: ReactNode }): ReactNode 
     setTracks(fresh)
   }, [])
 
+  const applyTagEditsMany = useCallback(async (trackIds: string[], patch: TagEdit) => {
+    const fresh = await window.tl.library.editTagsMany(trackIds, patch)
+    setTracks(fresh)
+  }, [])
+
   const setRating = useCallback((trackId: string, rating: number) => {
     setTracks((ts) => ts.map((t) => (t.id === trackId ? { ...t, rating } : t)))
     void window.tl.library.updateTrack(trackId, { rating })
@@ -233,10 +239,10 @@ export function StoreProvider({ children }: { children: ReactNode }): ReactNode 
     tracks, roots, excludedCount, playlists, scan, settings, update, view, search, version, streamer,
     setStreamer, setView, setSearch, addRoot, addFiles, addPaths, removeTracks, restoreExcluded, removeRoot, rescan, patchSettings,
     createPlaylist, renamePlaylist, deletePlaylist, addToPlaylist,
-    removeFromPlaylist, movePlaylistTrack, setRating, applyTagEdits
+    removeFromPlaylist, movePlaylistTrack, setRating, applyTagEdits, applyTagEditsMany
   }), [tracks, roots, excludedCount, playlists, scan, settings, update, view, search, version, streamer,
     addRoot, addFiles, addPaths, removeTracks, restoreExcluded, removeRoot, rescan, patchSettings, createPlaylist, renamePlaylist,
-    deletePlaylist, addToPlaylist, removeFromPlaylist, movePlaylistTrack, setRating, applyTagEdits])
+    deletePlaylist, addToPlaylist, removeFromPlaylist, movePlaylistTrack, setRating, applyTagEdits, applyTagEditsMany])
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>
 }

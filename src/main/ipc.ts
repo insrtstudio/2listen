@@ -142,19 +142,32 @@ export function registerIpc(win: () => BrowserWindow | null): void {
     library.set({ ...data, tracks })
   })
 
-  ipcMain.handle('lib:editTags', async (_e, id: string, patch: TagEdit) => {
+  const applyTagEdits = async (ids: string[], patch: TagEdit): Promise<void> => {
     const allowed = new Set(['title', 'artist', 'albumArtist', 'album', 'genre', 'year', 'cover'])
     const safe: TagEdit = {}
     for (const [k, v] of Object.entries(patch)) {
       if (allowed.has(k)) (safe as Record<string, unknown>)[k] = v
     }
+    const want = new Set(ids)
     const data = library.get()
+    const edits = { ...(data.edits ?? {}) }
+    for (const id of want) edits[id] = { ...(edits[id] ?? {}), ...safe }
     library.set({
       ...data,
-      edits: { ...(data.edits ?? {}), [id]: { ...(data.edits?.[id] ?? {}), ...safe } },
-      tracks: data.tracks.map((t) => (t.id === id ? { ...t, ...safe } : t))
+      edits,
+      tracks: data.tracks.map((t) => (want.has(t.id) ? { ...t, ...safe } : t))
     })
     await library.flush()
+  }
+
+  ipcMain.handle('lib:editTags', async (_e, id: string, patch: TagEdit) => {
+    await applyTagEdits([id], patch)
+    return library.get().tracks
+  })
+
+  // Édition groupée : le même correctif appliqué à plusieurs pistes d'un coup.
+  ipcMain.handle('lib:editTagsMany', async (_e, ids: string[], patch: TagEdit) => {
+    if (Array.isArray(ids) && ids.length > 0) await applyTagEdits(ids.filter((i) => typeof i === 'string'), patch)
     return library.get().tracks
   })
 

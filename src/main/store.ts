@@ -1,7 +1,7 @@
 import { app } from 'electron'
 import { promises as fs } from 'node:fs'
 import { join } from 'node:path'
-import type { LibraryData, Settings } from '../shared/types'
+import { DEFAULT_COLUMNS, type LibraryData, type Settings } from '../shared/types'
 
 const DATA_VERSION = 1
 
@@ -23,7 +23,8 @@ export const defaultSettings: Settings = {
   matchSampleRate: true,
   gapless: true,
   compareA: null,
-  compareB: null
+  compareB: null,
+  columns: DEFAULT_COLUMNS
 }
 
 const emptyLibrary: LibraryData = { version: DATA_VERSION, roots: [], files: [], excluded: [], tracks: [], playlists: [], edits: {} }
