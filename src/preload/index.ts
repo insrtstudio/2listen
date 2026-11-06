@@ -35,7 +35,8 @@ const api = {
   },
   peaks: {
     read: (id: string): Promise<ArrayBuffer | null> => ipcRenderer.invoke('peaks:read', id),
-    write: (id: string, data: ArrayBuffer): Promise<void> => ipcRenderer.invoke('peaks:write', id, data)
+    write: (id: string, data: ArrayBuffer): Promise<void> => ipcRenderer.invoke('peaks:write', id, data),
+    pending: (bytes: number): Promise<{ id: string; path: string }[]> => ipcRenderer.invoke('peaks:pending', bytes)
   },
   track: {
     reveal: (path: string): Promise<void> => ipcRenderer.invoke('track:reveal', path)

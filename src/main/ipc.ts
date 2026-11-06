@@ -222,6 +222,16 @@ export function registerIpc(win: () => BrowserWindow | null): void {
     await fs.writeFile(join(paths.peaks(), `${id}.peaks`), Buffer.from(data))
   })
 
+  // Morceaux sans forme d'onde à jour (absente, ou ancien format d'une autre taille).
+  ipcMain.handle('peaks:pending', async (_e, bytes: number): Promise<{ id: string; path: string }[]> => {
+    const pending: { id: string; path: string }[] = []
+    for (const t of library.get().tracks) {
+      const size = await fs.stat(join(paths.peaks(), `${t.id}.peaks`)).then((s) => s.size, () => 0)
+      if (size !== bytes) pending.push({ id: t.id, path: t.path })
+    }
+    return pending
+  })
+
   // Décodage de secours : les codecs que Chromium ne décode pas hors lecture
   // (ALAC…) passent par CoreAudio via afconvert → WAV float temporaire.
   const execFileP = promisify(execFile)

@@ -40,8 +40,8 @@ async function compute(id: string, path: string): Promise<Peaks | null> {
     worker.onmessage = (e: MessageEvent<PeaksResult>) => {
       worker.terminate()
       const peaks = unpack(e.data.buckets, e.data.data)
-      void window.tl.peaks.write(id, e.data.data)
-      resolvePeaks(peaks)
+      // écrit avant de répondre : l'analyse groupée recompte ensuite ce qui manque sur le disque
+      void window.tl.peaks.write(id, e.data.data).finally(() => resolvePeaks(peaks))
     }
     worker.onerror = () => {
       worker.terminate()
@@ -82,4 +82,51 @@ export function getPeaks(id: string, path: string): Promise<Peaks | null> {
 
   pending.set(id, job)
   return job
+}
+
+export interface PeaksBatch {
+  running: boolean
+  done: number
+  total: number
+  failed: number
+  /** Morceaux encore sans forme d'onde ; null tant que le compte n'est pas fait. */
+  pending: number | null
+}
+
+let batch: PeaksBatch = { running: false, done: 0, total: 0, failed: 0, pending: null }
+let stopRequested = false
+const listeners = new Set<() => void>()
+
+function setBatch(next: Partial<PeaksBatch>): void {
+  batch = { ...batch, ...next }
+  listeners.forEach((l) => l())
+}
+
+export const peaksBatch = {
+  get: (): PeaksBatch => batch,
+  subscribe(listener: () => void): () => void {
+    listeners.add(listener)
+    return () => listeners.delete(listener)
+  },
+  async count(): Promise<void> {
+    if (batch.running) return
+    setBatch({ pending: (await window.tl.peaks.pending(BUCKETS * PLANES)).length })
+  },
+  /** Un morceau à la fois : chaque décodage charge tout le fichier en mémoire. */
+  async start(): Promise<void> {
+    if (batch.running) return
+    stopRequested = false
+    const todo = await window.tl.peaks.pending(BUCKETS * PLANES)
+    setBatch({ running: true, done: 0, failed: 0, total: todo.length, pending: todo.length })
+    for (const { id, path } of todo) {
+      if (stopRequested) break
+      const peaks = await getPeaks(id, path).catch(() => null)
+      setBatch({ done: batch.done + 1, failed: batch.failed + (peaks ? 0 : 1) })
+    }
+    setBatch({ running: false })
+    await peaksBatch.count()
+  },
+  stop(): void {
+    stopRequested = true
+  }
 }

@@ -20,6 +20,7 @@ Pièges connus :
 - Debug : `TL_CLIP_OUT=/x.mp4` exporte le clip streamer sans dialogue (tests e2e). `TL_SHOT=/x.png TL_SHOT_DELAY=6000 TL_AUTOPLAY=1 npx electron .` capture l'écran puis quitte (userData dev = `~/Library/Application Support/2Listen`).
 
 - Simulateur iOS : signer en ad hoc (`CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY=- DEVELOPMENT_TEAM=`) ; avec `CODE_SIGNING_ALLOWED=NO` le trousseau échoue et l'appairage semble se perdre à la relance. Le son du simulateur sort sur la sortie du Mac : toujours `SIMCTL_CHILD_TL_MUTE=1`. Sans Simulator.app, `simctl boot` reste sans fenêtre. Variables de test `TL_*` dans `TestHooks` (Debug seulement).
+- Formes d'onde : réglage iPhone « Analyser » (`peaksBatch` dans `lib/peaks.ts`), un morceau à la fois, car l'iPhone ne peut pas les calculer. L'iPhone n'accepte que le format actuel (2048 × 6 octets).
 - `tabViewBottomAccessory` (iOS 26) : toujours présent, l'ajouter au premier morceau recrée les onglets et perd la navigation. Un `Button` englobant y fige son contenu, d'où `onTapGesture` dans `MiniPlayer`. La pochette du mini-lecteur reste sur la note au simulateur alors que l'image arrive : à vérifier sur iPhone.
 
 Commandes : `npm run dev` / `npm run typecheck` / `npm run dist` (local) / `npm run release` (CI).

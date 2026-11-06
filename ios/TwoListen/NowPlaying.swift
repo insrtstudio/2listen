@@ -144,7 +144,7 @@ struct Scrubber: View {
     @EnvironmentObject private var player: Player
     @EnvironmentObject private var library: Library
     @EnvironmentObject private var clock: Clock
-    @State private var bars: [Float]?
+    @State private var wave: [WaveColumn]?
     @State private var dragging: Double?
 
     private var progress: Double {
@@ -167,7 +167,7 @@ struct Scrubber: View {
                             }
                     )
             }
-            .frame(height: bars == nil ? 28 : 72)
+            .frame(height: wave == nil ? 28 : 84)
             .accessibilityElement()
             .accessibilityLabel("Position")
             .accessibilityValue(clock.time.clock)
@@ -187,44 +187,88 @@ struct Scrubber: View {
 
     private func draw(in context: inout GraphicsContext, size: CGSize) {
         let played = size.width * progress
-        guard let bars, !bars.isEmpty else {
+        guard let wave, !wave.isEmpty else {
             let y = size.height / 2 - 2
             context.fill(Path(roundedRect: CGRect(x: 0, y: y, width: size.width, height: 4), cornerRadius: 2), with: .color(Theme.inkSoft.opacity(0.3)))
             context.fill(Path(roundedRect: CGRect(x: 0, y: y, width: played, height: 4), cornerRadius: 2), with: .color(Theme.accent))
             return
         }
-        let step = size.width / CGFloat(bars.count)
-        let width = max(1.5, step - 1)
-        for (i, value) in bars.enumerated() {
-            let height = max(2, CGFloat(value) * size.height)
-            let rect = CGRect(x: CGFloat(i) * step, y: (size.height - height) / 2, width: width, height: height)
-            let isPlayed = rect.midX <= played
-            context.fill(Path(roundedRect: rect, cornerRadius: width / 2), with: .color(isPlayed ? Theme.accent : Theme.inkSoft.opacity(0.4)))
-        }
-    }
-
-    /// Fichier du Mac : 6 plans de `buckets` octets, min et max centrés sur 128 d'abord.
-    private func loadPeaks() async {
-        bars = nil
-        guard let url = library.peaksURL(track),
-              let (data, response) = try? await URLSession.shared.data(from: url),
-              (response as? HTTPURLResponse)?.statusCode == 200, data.count >= 6 else { return }
-        let buckets = data.count / 6
-        let count = 72
-        var out = [Float](repeating: 0, count: count)
-        data.withUnsafeBytes { (raw: UnsafeRawBufferPointer) in
-            for i in 0..<count {
-                let from = i * buckets / count
-                let to = max(from + 1, (i + 1) * buckets / count)
-                var top: Float = 0
-                for b in from..<min(to, buckets) {
-                    let low = abs(Float(raw[b]) - 128)
-                    let high = abs(Float(raw[buckets + b]) - 128)
-                    top = max(top, max(low, high))
-                }
-                out[i] = top / 128
+        // comme sur le Mac : la silhouette des pics en texture, le cœur RMS en masse
+        let step = size.width / CGFloat(wave.count)
+        let width = max(1, step - 0.75)
+        let middle = size.height / 2
+        var shapes = (silhouette: Path(), core: Path(), playedSilhouette: Path(), playedCore: Path())
+        for (i, column) in wave.enumerated() {
+            let x = CGFloat(i) * step
+            let top = middle - CGFloat(column.top) * middle
+            let bottom = middle + CGFloat(column.bottom) * middle
+            let silhouette = CGRect(x: x, y: top, width: width, height: max(1, bottom - top))
+            let height = max(1.5, CGFloat(column.core) * size.height)
+            let core = CGRect(x: x, y: middle - height / 2, width: width, height: height)
+            if x + width / 2 <= played {
+                shapes.playedSilhouette.addRect(silhouette)
+                shapes.playedCore.addRect(core)
+            } else {
+                shapes.silhouette.addRect(silhouette)
+                shapes.core.addRect(core)
             }
         }
-        bars = out
+        context.fill(shapes.silhouette, with: .color(Theme.inkSoft.opacity(0.22)))
+        context.fill(shapes.core, with: .color(Theme.inkSoft.opacity(0.6)))
+        context.fill(shapes.playedSilhouette, with: .color(Theme.accent.opacity(0.35)))
+        context.fill(shapes.playedCore, with: .color(Theme.accent))
+    }
+
+    /// Fichier du Mac : 2048 points sur 6 plans (min, max, graves, médiums, aigus, transitoires).
+    /// Une autre taille est un ancien format, à réanalyser depuis le Mac.
+    private func loadPeaks() async {
+        wave = nil
+        guard let url = library.peaksURL(track),
+              let (data, response) = try? await URLSession.shared.data(from: url),
+              (response as? HTTPURLResponse)?.statusCode == 200,
+              data.count == WaveColumn.buckets * 6 else { return }
+        wave = WaveColumn.columns(from: data)
+    }
+}
+
+/// Une colonne de la forme d'onde, en proportion de la hauteur utile.
+struct WaveColumn {
+    static let buckets = 2048
+    /// Environ 3 points par colonne sur un iPhone : le détail reste lisible à l'œil.
+    static let count = 128
+
+    var top: Float
+    var bottom: Float
+    var core: Float
+
+    static func columns(from data: Data) -> [WaveColumn] {
+        var columns = data.withUnsafeBytes { (raw: UnsafeRawBufferPointer) -> [WaveColumn] in
+            (0..<count).map { i in
+                let from = i * buckets / count
+                let to = (i + 1) * buckets / count
+                var lowest: UInt8 = 128, highest: UInt8 = 128
+                var energy: Float = 0
+                for b in from..<to {
+                    lowest = min(lowest, raw[b])
+                    highest = max(highest, raw[buckets + b])
+                    let bass = Float(raw[buckets * 2 + b]), mid = Float(raw[buckets * 3 + b]), treble = Float(raw[buckets * 4 + b])
+                    energy += (bass * bass + mid * mid + treble * treble).squareRoot()
+                }
+                return WaveColumn(
+                    top: (Float(highest) - 128) / 128,
+                    bottom: (128 - Float(lowest)) / 128,
+                    core: energy / Float(to - from)
+                )
+            }
+        }
+        // le cœur est ramené au point le plus fort du morceau, pour garder ses reliefs lisibles
+        let loudest = columns.map(\.core).max() ?? 0
+        if loudest > 0 {
+            for i in columns.indices {
+                let full = columns[i].top + columns[i].bottom
+                columns[i].core = min(full / 2, columns[i].core / loudest * 0.9)
+            }
+        }
+        return columns
     }
 }

@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useSyncExternalStore } from 'react'
 import type { RemoteState } from '@shared/types'
 import { useStore } from '@/lib/store'
+import { peaksBatch } from '@/lib/peaks'
 import Icon from './Icon'
 
 /** Tout ce qui ne sert pas à écouter, sur une seule page. */
@@ -145,6 +146,7 @@ function RemoteGroup(): React.ReactNode {
               <span className="grow">Adresse</span>
               <span className="mono dim ell" style={{ fontSize: 11 }}>{remote.addresses.map((a) => `${a}:${remote.port}`).join(', ') || 'Pas de réseau'}</span>
             </div>
+            <WaveformsRow />
             {remote.paired && (
               <div className="grow-row">
                 <span className="grow">Appareils connectés</span>
@@ -154,6 +156,31 @@ function RemoteGroup(): React.ReactNode {
           </>
         )}
       </div>
+    </div>
+  )
+}
+
+/** Analyse d'avance les morceaux jamais lus sur le Mac : l'iPhone n'a pas de quoi le faire lui-même. */
+function WaveformsRow(): React.ReactNode {
+  const batch = useSyncExternalStore(peaksBatch.subscribe, peaksBatch.get)
+  useEffect(() => void peaksBatch.count(), [])
+  const plural = (n: number): string => `${n} morceau${n > 1 ? 'x' : ''}`
+  const status = batch.running
+    ? `Analyse : ${batch.done} / ${batch.total}`
+    : batch.pending === null
+      ? ''
+      : batch.pending === 0
+        ? 'Toutes prêtes'
+        : `${plural(batch.pending)} à analyser`
+  return (
+    <div className="grow-row" data-peaks-row>
+      <span className="grow">Formes d'onde</span>
+      <span className="dim" data-peaks-status style={{ fontSize: 12, marginRight: 8 }}>{status}</span>
+      {batch.running ? (
+        <button className="blk sm" onClick={() => peaksBatch.stop()}>Arrêter</button>
+      ) : (
+        !!batch.pending && <button className="blk sm" data-peaks-start onClick={() => void peaksBatch.start()}>Analyser</button>
+      )}
     </div>
   )
 }
