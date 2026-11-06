@@ -101,7 +101,10 @@ export function StoreProvider({ children }: { children: ReactNode }): ReactNode 
     })()
     const offScan = window.tl.library.onScanProgress(setScan)
     const offUpdate = window.tl.update.onState(setUpdate)
+    // modifiées depuis l'iPhone : le prochain enregistrement d'ici repart de cette version
+    const offPlaylists = window.tl.playlists.onChanged(setPlaylists)
     return () => {
+      offPlaylists()
       offScan()
       offUpdate()
     }

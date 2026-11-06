@@ -10,7 +10,7 @@ struct MiniPlayer: View {
         HStack(spacing: 10) {
             // pas de Button ici : dans l'accessoire de la barre d'onglets, son contenu n'était plus redessiné
             HStack(spacing: 10) {
-                CoverView(key: player.current?.cover, cornerRadius: 6).frame(width: 32, height: 32)
+                CoverView(key: player.current?.cover, seed: player.current?.coverSeed, cornerRadius: 6).frame(width: 32, height: 32)
                 VStack(alignment: .leading, spacing: 0) {
                     Text(player.current?.title ?? "Rien en lecture")
                         .font(.subheadline.weight(.semibold))
@@ -46,11 +46,12 @@ struct MiniPlayer: View {
 struct NowPlayingView: View {
     @EnvironmentObject private var player: Player
     @EnvironmentObject private var library: Library
+    @State private var creatingFor: Track?
 
     var body: some View {
         VStack(spacing: 18) {
             Spacer(minLength: 24)
-            CoverView(key: player.current?.cover, cornerRadius: 20)
+            CoverView(key: player.current?.cover, seed: player.current?.coverSeed, cornerRadius: 20)
                 .aspectRatio(1, contentMode: .fit)
                 .frame(maxHeight: 360)
             Spacer(minLength: 0)
@@ -115,6 +116,14 @@ struct NowPlayingView: View {
                     .font(.system(.footnote, design: .monospaced))
                     .foregroundStyle(Theme.inkSoft)
                 Spacer()
+                if let track = player.current {
+                    Menu {
+                        TrackActions(track: track, creatingFor: $creatingFor)
+                    } label: {
+                        Image(systemName: "ellipsis.circle").font(.title2).foregroundStyle(Theme.inkSoft)
+                    }
+                    .accessibilityLabel("Plus d'actions")
+                }
                 RoutePicker().frame(width: 32, height: 32)
             }
             Spacer(minLength: 8)
@@ -123,6 +132,7 @@ struct NowPlayingView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Theme.background)
         .presentationDragIndicator(.visible)
+        .modifier(TrackActionAlerts(creatingFor: $creatingFor))
     }
 }
 
@@ -225,7 +235,7 @@ struct Scrubber: View {
         wave = nil
         guard let url = library.peaksURL(track),
               let (data, response) = try? await URLSession.shared.data(from: url),
-              (response as? HTTPURLResponse)?.statusCode == 200,
+              url.isFileURL || (response as? HTTPURLResponse)?.statusCode == 200,
               data.count == WaveColumn.buckets * 6 else { return }
         wave = WaveColumn.columns(from: data)
     }

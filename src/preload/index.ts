@@ -22,7 +22,12 @@ const api = {
     pickCover: (): Promise<string | null> => ipcRenderer.invoke('cover:pick')
   },
   playlists: {
-    save: (playlists: Playlist[]): Promise<void> => ipcRenderer.invoke('pl:save', playlists)
+    save: (playlists: Playlist[]): Promise<void> => ipcRenderer.invoke('pl:save', playlists),
+    onChanged: (cb: (playlists: Playlist[]) => void): (() => void) => {
+      const handler = (_: unknown, playlists: Playlist[]): void => cb(playlists)
+      ipcRenderer.on('pl:changed', handler)
+      return () => ipcRenderer.removeListener('pl:changed', handler)
+    }
   },
   settings: {
     get: (): Promise<Settings> => ipcRenderer.invoke('settings:get'),

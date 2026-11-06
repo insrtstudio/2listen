@@ -3,12 +3,14 @@ import { createPortal } from 'react-dom'
 import { useStore } from '@/lib/store'
 import Icon, { AppMark } from './Icon'
 import SettingsSheet from './SettingsSheet'
+import { TRACKS_DRAG } from './TrackTable'
 
 export default function Sidebar(): React.ReactNode {
-  const { view, setView, playlists, scan, createPlaylist, update, setStreamer, settings, patchSettings } = useStore()
+  const { view, setView, playlists, scan, createPlaylist, addToPlaylist, update, setStreamer, settings, patchSettings } = useStore()
   const [creating, setCreating] = useState(false)
   const [name, setName] = useState('')
   const [showSettings, setShowSettings] = useState(false)
+  const [dropTarget, setDropTarget] = useState<string | null>(null)
 
   const scanning = scan.phase === 'discover' || scan.phase === 'read'
 
@@ -84,7 +86,26 @@ export default function Sidebar(): React.ReactNode {
           </form>
         )}
         {playlists.map((p) => (
-          <div key={p.id}>
+          <div
+            key={p.id}
+            className={dropTarget === p.id ? 'drop-hot' : undefined}
+            data-playlist-drop={p.id}
+            onDragOver={(e) => {
+              if (!e.dataTransfer.types.includes(TRACKS_DRAG)) return
+              e.preventDefault()
+              e.dataTransfer.dropEffect = 'copy'
+              setDropTarget(p.id)
+            }}
+            onDragLeave={(e) => {
+              if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDropTarget(null)
+            }}
+            onDrop={(e) => {
+              e.preventDefault()
+              setDropTarget(null)
+              const ids: unknown = JSON.parse(e.dataTransfer.getData(TRACKS_DRAG) || '[]')
+              if (Array.isArray(ids)) addToPlaylist(p.id, ids as string[])
+            }}
+          >
             {item(p.name, 'list', view.kind === 'playlist' && view.id === p.id, () => setView({ kind: 'playlist', id: p.id }))}
           </div>
         ))}

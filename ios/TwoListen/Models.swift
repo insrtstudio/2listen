@@ -27,6 +27,8 @@ struct Track: Codable, Identifiable, Hashable {
         return name.isEmpty ? "Artiste inconnu" : name
     }
     var groupAlbum: String { album.isEmpty ? "Album inconnu" : album }
+    /// Graine de la pochette générée : les morceaux d'un album partagent la même.
+    var coverSeed: String { album.isEmpty ? id : "\(groupArtist)\u{1}\(album)" }
 
     /// « FLAC · 24/96 » ou « MP3 · 320 kbps », comme sur le Mac (fmtQuality).
     var quality: String {
@@ -57,6 +59,7 @@ struct Album: Identifiable, Hashable {
     var id: String { "\(artist)\u{1}\(title)" }
     var cover: String? { tracks.first(where: { $0.cover != nil })?.cover }
     var year: Int? { tracks.compactMap(\.year).first }
+    var coverSeed: String { tracks.first?.coverSeed ?? id }
 }
 
 struct Artist: Identifiable, Hashable {

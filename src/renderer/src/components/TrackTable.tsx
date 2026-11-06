@@ -86,6 +86,8 @@ const COLUMN_ORDER = Object.keys(COLUMNS) as ColumnKey[]
  * Liste virtualisée maison : seules les lignes visibles existent dans le DOM,
  * 50 000 pistes défilent sans effort.
  */
+export const TRACKS_DRAG = 'application/x-2listen-tracks'
+
 export default function TrackTable({ tracks, onReorder, onRemove, sort, sortDir, onSort }: Props): React.ReactNode {
   const { settings, setRating, playlists, addToPlaylist, createPlaylist, removeTracks, patchSettings, setView } = useStore()
   const snap = useSyncExternalStore(player.subscribe, player.getSnapshot)
@@ -249,6 +251,8 @@ export default function TrackTable({ tracks, onReorder, onRemove, sort, sortDir,
                 onDragStart={(e) => {
                   // drag interne : l'id permet de déposer sur les zones A/B
                   e.dataTransfer.setData('application/x-2listen-track', t.id)
+                  // vers une playlist : toute la sélection si la ligne en fait partie
+                  e.dataTransfer.setData(TRACKS_DRAG, JSON.stringify(isSel ? [...selected] : [t.id]))
                   e.dataTransfer.effectAllowed = 'copyMove'
                   if (onReorder) setDragIdx(index)
                 }}

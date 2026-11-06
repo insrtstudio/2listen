@@ -162,6 +162,7 @@ input, select, textarea { font-family: inherit; color: inherit; user-select: tex
 .navitem:hover { background: var(--hover); }
 .navitem.on { background: var(--accent-soft); }
 .navitem.on svg { color: var(--accent-2); }
+.drop-hot .navitem { background: var(--accent-soft); box-shadow: inset 0 0 0 1.5px var(--accent); }
 
 /* colonne principale */
 .maincol { position: relative; z-index: 1; flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 8px; min-height: 0; }

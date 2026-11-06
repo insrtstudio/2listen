@@ -13,12 +13,19 @@ final class Library: ObservableObject {
     @Published private(set) var macName = ""
     @Published private(set) var albums: [Album] = []
     @Published private(set) var artists: [Artist] = []
+    /// Une écriture ou un téléchargement qui a échoué, à signaler.
+    @Published var notice: String?
+    @Published var downloaded: Set<String> = []
+    @Published var downloading: Set<String> = []
+    var downloadQueue: [Track] = []
+    var downloadWorker: Task<Void, Never>?
+    let downloadSession = URLSession(configuration: .default)
 
     private(set) var baseURL: URL?
     private var token: String?
     private var byId: [String: Track] = [:]
 
-    private let session: URLSession = {
+    let session: URLSession = {
         let config = URLSessionConfiguration.default
         config.timeoutIntervalForRequest = 8
         // assez pour garder les pochettes d'une grosse bibliothèque
@@ -26,11 +33,15 @@ final class Library: ObservableObject {
         return URLSession(configuration: config)
     }()
 
+    /// Hors du dossier Caches, que le système peut vider : sans le Mac, c'est tout ce qu'il reste.
     private var cacheFile: URL {
-        FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0].appendingPathComponent("library.json")
+        let folder = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        return folder.appendingPathComponent("library.json")
     }
 
     init() {
+        loadDownloads()
         guard let saved = UserDefaults.standard.string(forKey: "server"), let url = URL(string: saved),
               let secret = Keychain.read() else { return }
         baseURL = url
@@ -45,9 +56,10 @@ final class Library: ObservableObject {
 
     // MARK: Adresses
 
-    func streamURL(_ track: Track) -> URL? { url("stream/\(track.id).\(track.ext)") }
-    func coverURL(_ key: String?) -> URL? { key.flatMap { url("cover/\($0)") } }
-    func peaksURL(_ track: Track) -> URL? { url("peaks/\(track.id)") }
+    func streamURL(_ track: Track) -> URL? { localAudio(track) ?? url("stream/\(track.id).\(track.ext)") }
+    func coverURL(_ key: String?) -> URL? { key.flatMap { localCover($0) ?? url("cover/\($0)") } }
+    func peaksURL(_ track: Track) -> URL? { localPeaks(track) ?? url("peaks/\(track.id)") }
+    func remoteURL(_ path: String) -> URL? { url(path) }
 
     private func url(_ path: String) -> URL? {
         guard let baseURL, let token else { return nil }
@@ -99,29 +111,57 @@ final class Library: ObservableObject {
             let (data, response) = try await session.data(from: url)
             let status = (response as? HTTPURLResponse)?.statusCode
             if status == 401 {
-                // le Mac a déconnecté les appareils : il faut un nouveau code
-                forget()
+                // le Mac a déconnecté les appareils : il faut un nouveau code.
+                // Les téléchargements restent, ils resserviront à la reconnexion.
+                forget(keepingDownloads: true)
                 return
             }
             guard status == 200 else { throw URLError(.badServerResponse) }
             apply(try JSONDecoder().decode(LibraryPayload.self, from: data))
             try? data.write(to: cacheFile, options: .atomic)
             link = .online
+            pruneDownloads()
+            saveAddresses(data)
         } catch {
             link = .offline
             await rediscover()
         }
     }
 
-    /// L'adresse du Mac a pu changer : Bonjour le retrouve sans nouvel appairage.
+    /// L'adresse du Mac a pu changer : Bonjour le retrouve sans nouvel appairage, et hors
+    /// de chez soi on essaie ses autres adresses (Tailscale, par exemple).
     private func rediscover() async {
-        guard let found = await Bonjour.firstServer(timeout: 4), found != baseURL else { return }
-        baseURL = found
-        UserDefaults.standard.set(found.absoluteString, forKey: "server")
-        await refresh()
+        var candidates = (UserDefaults.standard.stringArray(forKey: "addresses") ?? []).compactMap(URL.init(string:))
+        if let nearby = await Bonjour.firstServer(timeout: 4) { candidates.insert(nearby, at: 0) }
+        for candidate in candidates where candidate != baseURL {
+            guard await accepts(candidate) else { continue }
+            baseURL = candidate
+            UserDefaults.standard.set(candidate.absoluteString, forKey: "server")
+            await refresh()
+            return
+        }
     }
 
-    func forget() {
+    /// Un autre 2Listen sur le réseau refuse notre jeton : il ne faut surtout pas s'y connecter.
+    private func accepts(_ server: URL) async -> Bool {
+        guard let token else { return false }
+        var request = URLRequest(url: server.appendingPathComponent("api/info/auth"))
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.timeoutInterval = 3
+        guard let (_, response) = try? await session.data(for: request) else { return false }
+        return (response as? HTTPURLResponse)?.statusCode == 200
+    }
+
+    private func saveAddresses(_ data: Data) {
+        guard let reply = try? JSONDecoder().decode(Reach.self, from: data) else { return }
+        UserDefaults.standard.set(reply.addresses.map { "http://\($0):\(reply.port)" }, forKey: "addresses")
+    }
+
+    private struct Reach: Decodable { let addresses: [String]; let port: Int }
+
+    func forget(keepingDownloads: Bool = false) {
+        if !keepingDownloads { removeAllDownloads() }
+        UserDefaults.standard.removeObject(forKey: "addresses")
         Keychain.delete()
         UserDefaults.standard.removeObject(forKey: "server")
         UserDefaults.standard.removeObject(forKey: "macName")
@@ -138,6 +178,39 @@ final class Library: ObservableObject {
     }
 
     func tracks(of playlist: Playlist) -> [Track] { playlist.trackIds.compactMap { byId[$0] } }
+    func album(of track: Track) -> Album? { albums.first { $0.tracks.contains(track) } }
+    func artist(of track: Track) -> Artist? { artists.first { $0.tracks.contains(track) } }
+
+    // MARK: Playlists
+
+    func add(_ track: Track, to playlist: Playlist) async {
+        await write("playlists/\(playlist.id)/tracks", method: "POST", body: ["trackIds": [track.id]])
+    }
+
+    func remove(_ track: Track, from playlist: Playlist) async {
+        await write("playlists/\(playlist.id)/tracks", method: "DELETE", body: ["trackIds": [track.id]])
+    }
+
+    func createPlaylist(named name: String, with track: Track?) async {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        await write("playlists", method: "POST", body: ["name": trimmed.isEmpty ? "Nouvelle playlist" : trimmed, "trackIds": track.map { [$0.id] } ?? []])
+    }
+
+    /// Le Mac reste la référence : on relit la bibliothèque après chaque écriture.
+    private func write(_ path: String, method: String, body: [String: Any]) async {
+        guard let baseURL, let token else { return }
+        var request = URLRequest(url: baseURL.appendingPathComponent("api/\(path)"))
+        request.httpMethod = method
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try? JSONSerialization.data(withJSONObject: body)
+        guard let (_, response) = try? await session.data(for: request),
+              (response as? HTTPURLResponse)?.statusCode == 200 else {
+            notice = "Le Mac n'a pas pu enregistrer. Vérifie que 2Listen y est ouvert, puis réessaie."
+            return
+        }
+        await refresh()
+    }
 
     private func apply(_ payload: LibraryPayload) {
         tracks = payload.tracks

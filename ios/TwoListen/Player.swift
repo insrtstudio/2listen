@@ -1,4 +1,5 @@
 import AVFoundation
+import SwiftUI
 import Combine
 import MediaPlayer
 import UIKit
@@ -66,7 +67,9 @@ final class Player: ObservableObject {
 
     // MARK: Commandes
 
-    func play(_ tracks: [Track], from start: Track, shuffle: Bool = false) {
+    func play(_ requested: [Track], from start: Track, shuffle: Bool = false) {
+        let tracks = library.map { lib in requested.filter(lib.isPlayable) } ?? requested
+        guard tracks.contains(start) else { return }
         failure = nil
         failedInARow = 0
         original = tracks
@@ -79,6 +82,28 @@ final class Player: ObservableObject {
             index = tracks.firstIndex(of: start) ?? 0
         }
         load(startPlaying: true)
+    }
+
+    /// Juste après le morceau en cours.
+    func playNext(_ track: Track) { enqueue(track) { index + 1 } }
+    /// À la fin de la file.
+    func addToQueue(_ track: Track) { enqueue(track) { queue.count } }
+
+    private func enqueue(_ track: Track, at position: () -> Int) {
+        guard track != current else { return }
+        guard current != nil else {
+            play([track], from: track)
+            return
+        }
+        // une seule occurrence : le suivi du morceau en cours se repère par sa place dans la file
+        if let existing = queue.firstIndex(of: track) {
+            queue.remove(at: existing)
+            if existing < index { index -= 1 }
+        }
+        queue.insert(track, at: position())
+        original.removeAll { $0 == track }
+        original.insert(track, at: min((original.firstIndex { $0 == current } ?? -1) + 1, original.count))
+        rebuildUpcoming()
     }
 
     func toggle() {
@@ -141,8 +166,10 @@ final class Player: ObservableObject {
 
     private func upcomingIndex(afterSkip: Bool) -> Int? {
         if repeatMode == .one && !afterSkip { return index }
-        if index + 1 < queue.count { return index + 1 }
-        return repeatMode == .off ? nil : 0
+        // sans le Mac, on saute ce qui n'est pas téléchargé
+        let playable = { (i: Int) in self.library?.isPlayable(self.queue[i]) ?? true }
+        if let following = (index + 1 ..< max(index + 1, queue.count)).first(where: playable) { return following }
+        return repeatMode == .off ? nil : queue.indices.first(where: playable)
     }
 
     private func makeItem(_ track: Track) -> Item? {
@@ -287,7 +314,16 @@ final class Player: ObservableObject {
     private func loadArtwork(_ track: Track) {
         artworkTask?.cancel()
         artwork = nil
-        guard let url = library?.coverURL(track.cover) else { return }
+        guard let url = library?.coverURL(track.cover) else {
+            // même pochette générée que dans l'app
+            let renderer = ImageRenderer(content: GeneratedCover(seed: track.coverSeed).frame(width: 600, height: 600))
+            renderer.scale = 1
+            if let image = renderer.uiImage {
+                artwork = MPMediaItemArtwork(boundsSize: image.size) { _ in image }
+                publishNowPlaying()
+            }
+            return
+        }
         artworkTask = Task { [weak self] in
             guard let (data, _) = try? await URLSession.shared.data(from: url),
                   let image = UIImage(data: data), !Task.isCancelled else { return }

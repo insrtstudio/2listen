@@ -1,11 +1,11 @@
-import { app, ipcMain, powerSaveBlocker } from 'electron'
+import { BrowserWindow, app, ipcMain, powerSaveBlocker } from 'electron'
 import { spawn, type ChildProcess } from 'node:child_process'
 import { randomBytes, randomInt, timingSafeEqual } from 'node:crypto'
 import { createReadStream, promises as fs } from 'node:fs'
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import { hostname, networkInterfaces } from 'node:os'
 import { basename, extname, join } from 'node:path'
-import type { RemoteState, Track } from '../shared/types'
+import type { Playlist, RemoteState, Track } from '../shared/types'
 import { mimeFor } from './protocol'
 import { library, paths } from './store'
 
@@ -20,6 +20,7 @@ const DEFAULT_PORT = 47810
 const CODE_TTL = 10 * 60_000
 const MAX_ATTEMPTS = 5
 const AWAKE_AFTER_STREAM = 60_000
+const MAX_BODY = 1 << 20
 
 interface RemoteFile {
   enabled: boolean
@@ -34,6 +35,72 @@ let bonjour: ChildProcess | null = null
 let code: { value: string; expires: number; attempts: number } | null = null
 let blocker: number | null = null
 let blockerTimer: NodeJS.Timeout | null = null
+
+/** Corps JSON d'une écriture, ou null s'il est trop gros ou illisible. */
+async function readJson(req: IncomingMessage): Promise<Record<string, unknown> | null> {
+  const chunks: Buffer[] = []
+  let size = 0
+  for await (const chunk of req) {
+    size += (chunk as Buffer).length
+    if (size > MAX_BODY) return null
+    chunks.push(chunk as Buffer)
+  }
+  try {
+    const value: unknown = JSON.parse(Buffer.concat(chunks).toString('utf8'))
+    return value && typeof value === 'object' ? (value as Record<string, unknown>) : null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * POST /api/playlists { name, trackIds? }, puis POST ou DELETE
+ * /api/playlists/<id>/tracks { trackIds } pour ajouter ou retirer des morceaux.
+ */
+async function handlePlaylists(req: IncomingMessage, res: ServerResponse, route: string): Promise<void> {
+  const target = route.match(/^\/api\/playlists\/([^/]+)\/tracks$/)?.[1]
+  const creating = route === '/api/playlists' && req.method === 'POST'
+  const editing = !!target && (req.method === 'POST' || req.method === 'DELETE')
+  if (!creating && !editing) {
+    send(res, route === '/api/playlists' || target ? 405 : 404, { error: 'not allowed' })
+    return
+  }
+  const body = await readJson(req)
+  if (!body) {
+    send(res, 400, { error: 'bad request' })
+    return
+  }
+  const data = library.get()
+  const known = new Set(data.tracks.map((t) => t.id))
+  const given = Array.isArray(body.trackIds) ? body.trackIds : []
+  const ids = [...new Set(given.filter((id): id is string => typeof id === 'string' && known.has(id)))]
+  const now = Date.now()
+  let playlists: Playlist[]
+  if (creating) {
+    const name = typeof body.name === 'string' ? body.name.trim().slice(0, 200) : ''
+    if (!name) {
+      send(res, 400, { error: 'name required' })
+      return
+    }
+    playlists = [...data.playlists, { id: randomBytes(8).toString('hex'), name, trackIds: ids, createdAt: now, updatedAt: now }]
+  } else {
+    if (!data.playlists.some((p) => p.id === target)) {
+      send(res, 404, { error: 'not found' })
+      return
+    }
+    playlists = data.playlists.map((p) => {
+      if (p.id !== target) return p
+      const trackIds = req.method === 'POST'
+        ? [...p.trackIds, ...ids.filter((id) => !p.trackIds.includes(id))]
+        : p.trackIds.filter((id) => !ids.includes(id))
+      return { ...p, trackIds, updatedAt: now }
+    })
+  }
+  library.set({ ...data, playlists })
+  // sinon le prochain enregistrement côté Mac écraserait cette modification
+  for (const win of BrowserWindow.getAllWindows()) win.webContents.send('pl:changed', playlists)
+  send(res, 200, { ok: true })
+}
 
 async function saveConfig(): Promise<void> {
   // le jeton donne accès à la musique : lisible par l'utilisateur seul
@@ -200,6 +267,20 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
     send(res, 401, { error: 'unauthorized' })
     return
   }
+  // l'iPhone vérifie ici qu'il parle bien à son Mac avant d'adopter une nouvelle adresse
+  if (route === '/api/info/auth') {
+    send(res, 200, { ok: true })
+    return
+  }
+  if (route.startsWith('/api/playlists')) {
+    // pas de jeton dans l'adresse pour écrire : il finirait dans les journaux
+    if (!bearer) {
+      send(res, 401, { error: 'unauthorized' })
+      return
+    }
+    await handlePlaylists(req, res, route)
+    return
+  }
   if (req.method !== 'GET' && req.method !== 'HEAD') {
     send(res, 405, { error: 'method not allowed' })
     return
@@ -207,7 +288,8 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
 
   if (route === '/api/library') {
     const data = library.get()
-    send(res, 200, { tracks: data.tracks.map(publicTrack), playlists: data.playlists })
+    // les adresses permettent à l'iPhone de retrouver le Mac hors du réseau local (Tailscale)
+    send(res, 200, { tracks: data.tracks.map(publicTrack), playlists: data.playlists, addresses: remoteState().addresses, port })
     return
   }
 

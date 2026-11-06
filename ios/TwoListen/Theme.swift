@@ -19,6 +19,27 @@ enum Theme {
     )
 }
 
+/// Le thème choisi dans Réglages ; « Auto » suit celui de l'iPhone.
+enum Appearance: String, CaseIterable, Identifiable {
+    case system, light, dark
+    static let storageKey = "appearance"
+    var id: String { rawValue }
+    var label: String {
+        switch self {
+        case .system: return "Auto"
+        case .light: return "Clair"
+        case .dark: return "Sombre"
+        }
+    }
+    var scheme: ColorScheme? {
+        switch self {
+        case .system: return nil
+        case .light: return .light
+        case .dark: return .dark
+        }
+    }
+}
+
 extension Color {
     init(hex: UInt32) {
         self.init(
