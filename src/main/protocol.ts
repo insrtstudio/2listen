@@ -36,7 +36,7 @@ const MIME: Record<string, string> = {
   png: 'image/png'
 }
 
-const mimeFor = (path: string): string => MIME[extname(path).slice(1).toLowerCase()] ?? 'application/octet-stream'
+export const mimeFor = (path: string): string => MIME[extname(path).slice(1).toLowerCase()] ?? 'application/octet-stream'
 
 /** Un fichier n'est servi que s'il vit sous une racine, est un morceau ajouté
  *  individuellement, ou appartient à nos caches. */

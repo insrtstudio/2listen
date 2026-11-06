@@ -69,3 +69,14 @@ la page de release. Avec un certificat, ajoutez les secrets `CSC_LINK` /
 - Si l'interface audio par défaut du système ne répond pas (certaines interfaces
   pro >32 canaux, périphérique éteint), l'app l'affiche clairement au lieu de
   rester muette.
+
+## App iPhone
+
+`ios/TwoListen.xcodeproj` : une app native qui écoute la bibliothèque du Mac en flux, sans la copier.
+
+1. Sur le Mac, dans 2Listen : Réglages > iPhone > « Écouter depuis l'iPhone ». Un code à 6 chiffres s'affiche.
+2. Ouvrir le projet dans Xcode. Dans Signing & Capabilities, choisir son équipe (un Apple ID gratuit suffit, l'installation expire alors au bout de 7 jours) et changer l'identifiant de bundle s'il est refusé.
+3. Brancher l'iPhone, activer le mode développeur, lancer l'app.
+4. Dans l'app, choisir le Mac et saisir le code.
+
+Le Mac doit rester allumé avec 2Listen ouvert. Sur le réseau local, le jeton et l'audio circulent en clair (HTTP). Pour écouter hors de chez soi, passer par [Tailscale](https://tailscale.com), qui chiffre le trafic, et saisir l'adresse Tailscale du Mac (100.x.y.z).

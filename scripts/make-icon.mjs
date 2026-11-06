@@ -46,8 +46,13 @@ const bars = HEIGHTS.map((h, i) => {
   return [x0, MID - (h * MAX) / 2, x0 + BAR, MID + (h * MAX) / 2]
 })
 
-const sample = (x, y) => {
-  const d = sdRound(x, y, 100, 100, 924, 924, 186)
+// --ios : iOS arrondit lui-même, l'App Store veut un carré plein sans marge.
+const IOS = process.argv.includes('--ios')
+
+const sample = (px0, py0) => {
+  const x = IOS ? 100 + (px0 / S) * 824 : px0
+  const y = IOS ? 100 + (py0 / S) * 824 : py0
+  const d = IOS ? -10 : sdRound(x, y, 100, 100, 924, 924, 186)
   if (d > 0) return null
   if (Math.hypot(x - 768, y - 724) <= 32) return SUNSET
   for (const [x0, y0, x1, y1] of bars) {
@@ -106,6 +111,13 @@ const png = Buffer.concat([
   chunk('IDAT', deflateSync(raw, { level: 9 })),
   chunk('IEND', Buffer.alloc(0))
 ])
+
+if (IOS) {
+  const out = 'ios/TwoListen/Assets.xcassets/AppIcon.appiconset/AppIcon.png'
+  writeFileSync(out, png)
+  console.log(`✓ ${out}`)
+  process.exit(0)
+}
 
 mkdirSync('build', { recursive: true })
 writeFileSync('build/icon.png', png)

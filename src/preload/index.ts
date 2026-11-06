@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
-import type { LibraryData, Playlist, ScanProgress, Settings, TagEdit, Track, UpdateState } from '../shared/types'
+import type { LibraryData, Playlist, ScanProgress, Settings, TagEdit, Track, UpdateState, RemoteState } from '../shared/types'
 
 const api = {
   library: {
@@ -43,6 +43,11 @@ const api = {
   analysis: {
     read: (id: string): Promise<string | null> => ipcRenderer.invoke('analysis:read', id),
     write: (id: string, json: string): Promise<void> => ipcRenderer.invoke('analysis:write', id, json)
+  },
+  remote: {
+    state: (): Promise<RemoteState> => ipcRenderer.invoke('remote:state'),
+    setEnabled: (enabled: boolean): Promise<RemoteState> => ipcRenderer.invoke('remote:setEnabled', enabled),
+    revoke: (): Promise<RemoteState> => ipcRenderer.invoke('remote:revoke')
   },
   update: {
     state: (): Promise<UpdateState> => ipcRenderer.invoke('update:state'),

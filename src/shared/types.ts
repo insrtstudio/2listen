@@ -133,6 +133,20 @@ export interface Settings {
   columns: ColumnKey[]
 }
 
+/** État du serveur de l'app iPhone (Réglages). */
+export interface RemoteState {
+  enabled: boolean
+  running: boolean
+  port: number
+  /** Adresses IPv4 du Mac : réseau local, et Tailscale s'il tourne. */
+  addresses: string[]
+  name: string
+  /** Code d'appairage courant, null quand le serveur est arrêté. */
+  code: string | null
+  /** true quand au moins un appareil a déjà été appairé. */
+  paired: boolean
+}
+
 export interface UpdateState {
   status: 'idle' | 'checking' | 'available' | 'downloading' | 'ready' | 'error' | 'none'
   version?: string

@@ -2,6 +2,7 @@ import { BrowserWindow, app, nativeTheme, session, shell } from 'electron'
 import { join } from 'node:path'
 import { registerIpc } from './ipc'
 import { registerHandler, registerScheme } from './protocol'
+import { initServer, stopServer } from './server'
 import { initStores, library, settings } from './store'
 import { checkNow, initUpdater } from './updater'
 
@@ -131,6 +132,7 @@ app.whenReady().then(async () => {
   nativeTheme.themeSource = settings.get().theme
   registerHandler()
   registerIpc(() => mainWindow)
+  await initServer()
   createWindow()
   initUpdater((state) => {
     for (const w of BrowserWindow.getAllWindows()) w.webContents.send('update:state', state)
@@ -149,5 +151,6 @@ app.on('window-all-closed', () => {
 })
 
 app.on('before-quit', async () => {
+  stopServer()
   await Promise.all([library.flush(), settings.flush()])
 })

@@ -1,4 +1,5 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
+import type { RemoteState } from '@shared/types'
 import { useStore } from '@/lib/store'
 import Icon from './Icon'
 
@@ -81,6 +82,8 @@ export default function SettingsSheet({ onClose }: { onClose: () => void }): Rea
           </div>
         </div>
 
+        <RemoteGroup />
+
         <div className="group">
           <span className="label">Couleurs de la forme d'onde</span>
           <div className="group-box">
@@ -103,6 +106,53 @@ export default function SettingsSheet({ onClose }: { onClose: () => void }): Rea
             </div>
           </div>
         </div>
+      </div>
+    </div>
+  )
+}
+
+/** Écouter depuis l'iPhone : le Mac sert la bibliothèque tant que l'app est ouverte. */
+function RemoteGroup(): React.ReactNode {
+  const [remote, setRemote] = useState<RemoteState | null>(null)
+  useEffect(() => {
+    const refresh = (): void => void window.tl.remote.state().then(setRemote)
+    refresh()
+    // le code expire ou se consomme à l'appairage : on suit tant que Réglages est ouvert
+    const timer = setInterval(refresh, 3000)
+    return () => clearInterval(timer)
+  }, [])
+  if (!remote) return null
+  return (
+    <div className="group">
+      <span className="label">iPhone</span>
+      <div className="group-box">
+        <label className="grow-row switch" style={{ justifyContent: 'space-between' }}>
+          Écouter depuis l'iPhone
+          <input
+            type="checkbox"
+            data-remote-switch
+            checked={remote.enabled}
+            onChange={(e) => void window.tl.remote.setEnabled(e.target.checked).then(setRemote)}
+          />
+        </label>
+        {remote.running && (
+          <>
+            <div className="grow-row">
+              <span className="grow">Code d'appairage</span>
+              <span className="mono" data-remote-code style={{ fontSize: 15, letterSpacing: '0.12em' }}>{remote.code}</span>
+            </div>
+            <div className="grow-row">
+              <span className="grow">Adresse</span>
+              <span className="mono dim ell" style={{ fontSize: 11 }}>{remote.addresses.map((a) => `${a}:${remote.port}`).join(', ') || 'Pas de réseau'}</span>
+            </div>
+            {remote.paired && (
+              <div className="grow-row">
+                <span className="grow">Appareils connectés</span>
+                <button className="blk sm" onClick={() => void window.tl.remote.revoke().then(setRemote)}>Tout déconnecter</button>
+              </div>
+            )}
+          </>
+        )}
       </div>
     </div>
   )
