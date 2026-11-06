@@ -1,78 +1,57 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { useStore } from '@/lib/store'
+import Icon from './Icon'
+import SettingsSheet from './SettingsSheet'
 
 export default function Sidebar(): React.ReactNode {
-  const store = useStore()
-  const { view, setView, playlists, tracks, scan, createPlaylist, update, version, setStreamer } = store
+  const { view, setView, playlists, scan, createPlaylist, update, setStreamer, settings, patchSettings } = useStore()
   const [creating, setCreating] = useState(false)
   const [name, setName] = useState('')
+  const [showSettings, setShowSettings] = useState(false)
 
   const scanning = scan.phase === 'discover' || scan.phase === 'read'
 
+  // ⌘, : réglages, comme toute app macOS
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.metaKey && e.key === ',') {
+        e.preventDefault()
+        setShowSettings(true)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
+
+  const item = (label: string, icon: string, on: boolean, onClick: () => void, title?: string): React.ReactNode => (
+    <button className={`navitem ${on ? 'on' : ''}`} onClick={onClick} title={title}>
+      <Icon name={icon} />
+      <span className="ell">{label}</span>
+    </button>
+  )
+
   return (
-    <aside
-      style={{
-        width: 248, flex: 'none', borderRight: 'var(--line-thick)',
-        display: 'flex', flexDirection: 'column', minHeight: 0, background: 'var(--paper)'
-      }}
-    >
-      {/* rangée de marque : les feux macOS (natifs, ~x 18-82) ouvrent la ligne,
-          le wordmark les prolonge — même grille que la barre du haut */}
-      <div
-        className="drag"
-        style={{
-          height: 52,
-          borderBottom: 'var(--line-thick)',
-          display: 'flex',
-          alignItems: 'center',
-          gap: 8,
-          padding: '0 14px 0 92px'
-        }}
-      >
-        <span style={{ font: '700 20px/1 var(--grotesk)', letterSpacing: '-0.02em', whiteSpace: 'nowrap' }}>
-          2<span style={{ color: 'var(--accent)' }}>Listen</span>
-        </span>
-        <span className="mono" style={{ fontSize: 8, color: 'var(--ink-soft)', marginTop: 5 }}>
-          v{version || '0.0.0'}
-        </span>
+    <aside className="sidebar">
+      <div className="sidebar-titlebar drag">
+        <span className="brand">2<span>Listen</span></span>
       </div>
 
-      <nav style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
-        <div className="mono" style={{ fontSize: 9, letterSpacing: '.12em', color: 'var(--ink-soft)', padding: '14px 14px 6px' }}>
-          BIBLIOTHÈQUE
-        </div>
-        <button className={`navitem ${view.kind === 'tracks' ? 'on' : ''}`} onClick={() => setView({ kind: 'tracks' })}>
-          Pistes <span className="cnt">{tracks.length}</span>
-        </button>
-        <button className={`navitem ${view.kind === 'albums' || view.kind === 'album' ? 'on' : ''}`} onClick={() => setView({ kind: 'albums' })}>
-          Albums
-        </button>
-        <button className={`navitem ${view.kind === 'artists' || view.kind === 'artist' ? 'on' : ''}`} onClick={() => setView({ kind: 'artists' })}>
-          Artistes
-        </button>
+      <nav>
+        <div className="navlabel label" style={{ marginTop: 4 }}>Bibliothèque</div>
+        {item('Morceaux', 'note', view.kind === 'tracks', () => setView({ kind: 'tracks' }))}
+        {item('Albums', 'album', view.kind === 'albums' || view.kind === 'album', () => setView({ kind: 'albums' }))}
+        {item('Artistes', 'artist', view.kind === 'artists' || view.kind === 'artist', () => setView({ kind: 'artists' }))}
 
-        <div className="mono" style={{ fontSize: 9, letterSpacing: '.12em', color: 'var(--ink-soft)', padding: '18px 14px 6px' }}>
-          OUTILS
-        </div>
-        <button className={`navitem ${view.kind === 'compare' ? 'on' : ''}`} onClick={() => setView({ kind: 'compare' })}>
-          Comparer A/B <span className="cnt">Δ</span>
-        </button>
-        <button className={`navitem ${view.kind === 'mix' ? 'on' : ''}`} onClick={() => setView({ kind: 'mix' })}>
-          Table de mix <span className="cnt">DJ</span>
-        </button>
-        <button className="navitem" onClick={() => setStreamer(true)} title="Instagram-format stage, webcam and clip recording">
-          Streamer mode <span className="cnt">REC</span>
-        </button>
+        <div className="navlabel label">Outils</div>
+        {item('Comparer A/B', 'compare', view.kind === 'compare', () => setView({ kind: 'compare' }), 'Votre mix face à une référence')}
+        {item('Table de mix', 'mix', view.kind === 'mix', () => setView({ kind: 'mix' }), 'Deux platines, sync et crossfader')}
+        {item('Mode streamer', 'camera', false, () => setStreamer(true), 'Scène Instagram, webcam et clip MP4')}
 
-        <div className="mono" style={{ fontSize: 9, letterSpacing: '.12em', color: 'var(--ink-soft)', padding: '18px 14px 6px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          PLAYLISTS
-          <button
-            className="tap"
-            title="Nouvelle playlist"
-            onClick={() => setCreating(true)}
-            style={{ font: '700 13px var(--grotesk)', color: 'var(--accent)' }}
-          >
-            +
+        <div className="navlabel label">
+          Playlists
+          <button className="ic xs" title="Nouvelle playlist" onClick={() => setCreating(true)}>
+            <Icon name="plus" />
           </button>
         </div>
         {creating && (
@@ -86,135 +65,70 @@ export default function Sidebar(): React.ReactNode {
               setName('')
               setCreating(false)
             }}
-            style={{ padding: '4px 10px 8px' }}
+            style={{ padding: '2px 8px 4px' }}
           >
             <input
               autoFocus
               className="field"
-              placeholder="Nom de la playlist…"
+              placeholder="Nom de la playlist"
               value={name}
               onChange={(e) => setName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Escape') (e.target as HTMLInputElement).blur()
+              }}
               onBlur={() => {
                 setCreating(false)
                 setName('')
               }}
-              style={{ padding: '6px 9px', fontSize: 12 }}
             />
           </form>
         )}
         {playlists.map((p) => (
-          <button
-            key={p.id}
-            className={`navitem ${view.kind === 'playlist' && view.id === p.id ? 'on' : ''}`}
-            onClick={() => setView({ kind: 'playlist', id: p.id })}
-          >
-            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</span>
-            <span className="cnt">{p.trackIds.length}</span>
-          </button>
-        ))}
-        {playlists.length === 0 && !creating && (
-          <div className="serif" style={{ fontStyle: 'italic', fontSize: 13, color: 'var(--ink-soft)', padding: '4px 14px 10px' }}>
-            Aucune playlist.
+          <div key={p.id}>
+            {item(p.name, 'list', view.kind === 'playlist' && view.id === p.id, () => setView({ kind: 'playlist', id: p.id }))}
           </div>
-        )}
+        ))}
       </nav>
 
-      {/* état du scan + mise à jour */}
-      <div style={{ borderTop: 'var(--line)', flex: 'none' }}>
+      <div className="sidebar-foot">
         {scanning && (
-          <div style={{ padding: '10px 14px', borderBottom: 'var(--line)' }}>
-            <div className="mono" style={{ fontSize: 9, color: 'var(--accent)', animation: 'blink 1s steps(1) infinite' }}>
-              {scan.phase === 'discover' ? `EXPLORATION… ${scan.found}` : `LECTURE ${scan.done}/${scan.total}`}
+          <div className="status">
+            <div className="dim pulse" style={{ marginBottom: 5 }}>
+              {scan.phase === 'discover' ? `Exploration… ${scan.found}` : `Lecture ${scan.done} / ${scan.total}`}
             </div>
             {scan.phase === 'read' && scan.total > 0 && (
-              <div style={{ height: 6, border: '1.5px solid var(--ink)', marginTop: 6 }}>
-                <div style={{ height: '100%', width: `${(scan.done / scan.total) * 100}%`, background: 'var(--accent)' }} />
-              </div>
+              <div className="progress"><div style={{ width: `${(scan.done / scan.total) * 100}%` }} /></div>
             )}
           </div>
         )}
-        <UpdateBadge status={update} />
+        {update.status === 'downloading' && (
+          <div className="status">
+            <div className="dim" style={{ marginBottom: 5 }}>Mise à jour {update.percent ?? 0} %</div>
+            <div className="progress"><div style={{ width: `${update.percent ?? 0}%` }} /></div>
+          </div>
+        )}
+        {update.status === 'ready' && (
+          <button className="blk acc" style={{ width: '100%' }} onClick={() => void window.tl.update.install()} title="Redémarre l'app en quelques secondes">
+            Installer la v{update.version}
+          </button>
+        )}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+          <button className="navitem" style={{ flex: 1, margin: 0, width: 'auto' }} onClick={() => setShowSettings(true)} title="⌘,">
+            <Icon name="gear" />
+            Réglages
+            {update.status === 'error' && <span className="dim" style={{ marginLeft: 'auto', color: 'var(--accent-2)' }}>●</span>}
+          </button>
+          <button
+            className="ic"
+            title={settings.theme === 'light' ? 'Thème sombre' : 'Thème clair'}
+            onClick={() => patchSettings({ theme: settings.theme === 'light' ? 'dark' : 'light' })}
+          >
+            <Icon name={settings.theme === 'light' ? 'moon' : 'sun'} />
+          </button>
+        </div>
       </div>
+      {/* portail : la colonne principale passe au-dessus de la barre latérale */}
+      {showSettings && createPortal(<SettingsSheet onClose={() => setShowSettings(false)} />, document.body)}
     </aside>
   )
-}
-
-/** Bloc de mise à jour toujours visible : l'état n'est jamais silencieux. */
-function UpdateBadge({ status }: { status: ReturnType<typeof useStore>['update'] }): React.ReactNode {
-  if (status.status === 'ready') {
-    return (
-      <button
-        className="tap"
-        onClick={() => void window.tl.update.install()}
-        style={{
-          width: '100%',
-          padding: '12px 14px',
-          background: 'var(--accent)',
-          color: '#111',
-          font: '700 12px var(--grotesk)',
-          letterSpacing: '.06em',
-          textAlign: 'left'
-        }}
-      >
-        ↻ INSTALLER v{status.version}
-        <span style={{ display: 'block', font: '400 8px var(--mono)', marginTop: 3, letterSpacing: '.04em' }}>
-          redémarre l'app en quelques secondes
-        </span>
-      </button>
-    )
-  }
-
-  const row = (label: React.ReactNode, action?: { text: string; onClick: () => void }): React.ReactNode => (
-    <div
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        gap: 8,
-        padding: '8px 14px'
-      }}
-    >
-      <span className="mono" style={{ fontSize: 9, color: 'var(--ink-soft)', letterSpacing: '.06em', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-        {label}
-      </span>
-      {action && (
-        <button
-          className="mono tap"
-          onClick={action.onClick}
-          style={{ fontSize: 8, letterSpacing: '.1em', border: '1.5px solid var(--ink)', padding: '3px 7px', flex: 'none' }}
-        >
-          {action.text}
-        </button>
-      )}
-    </div>
-  )
-
-  switch (status.status) {
-    case 'checking':
-      return row(<span style={{ animation: 'blink 1s steps(1) infinite' }}>VÉRIFICATION…</span>)
-    case 'available':
-      return row(`MAJ v${status.version} trouvée…`)
-    case 'downloading':
-      return (
-        <div style={{ padding: '8px 14px' }}>
-          <div className="mono" style={{ fontSize: 9, color: 'var(--ink-soft)', letterSpacing: '.06em' }}>
-            MAJ v{status.version} — {status.percent ?? 0}%
-          </div>
-          <div style={{ height: 5, border: '1.5px solid var(--ink)', marginTop: 5 }}>
-            <div style={{ height: '100%', width: `${status.percent ?? 0}%`, background: 'var(--accent)' }} />
-          </div>
-        </div>
-      )
-    case 'error':
-      return row(
-        <span title={status.message}>MAJ : erreur</span>,
-        status.url
-          ? { text: 'PAGE', onClick: () => void window.tl.update.openUrl(status.url!) }
-          : { text: 'RÉESSAYER', onClick: () => void window.tl.update.check() }
-      )
-    case 'none':
-      return row('À jour', { text: 'VÉRIFIER', onClick: () => void window.tl.update.check() })
-    default:
-      return row('MAJ : en attente…', { text: 'VÉRIFIER', onClick: () => void window.tl.update.check() })
-  }
 }

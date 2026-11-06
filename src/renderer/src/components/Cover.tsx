@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
+import Icon from './Icon'
 
 const urlCache = new Map<string, string>()
 
-export default function Cover({ coverKey, size, alt, flush }: { coverKey: string | null; size: number; alt: string; flush?: boolean }): React.ReactNode {
+export default function Cover({ coverKey, size, alt }: { coverKey: string | null; size: number; alt: string }): React.ReactNode {
   const [src, setSrc] = useState<string | null>(coverKey ? urlCache.get(coverKey) ?? null : null)
 
   useEffect(() => {
@@ -27,23 +28,10 @@ export default function Cover({ coverKey, size, alt, flush }: { coverKey: string
 
   if (!src) {
     return (
-      <div
-        className="noart"
-        style={{ width: size, height: size, flex: 'none', border: flush ? 'none' : 'var(--line)', fontSize: Math.max(14, size / 4) }}
-        aria-hidden
-      >
-        ♪
+      <div className="noart" style={{ width: size, height: size, flex: 'none' }} aria-hidden>
+        <Icon name="note" size={Math.max(16, Math.round(size / 3))} />
       </div>
     )
   }
-  return (
-    <img
-      src={src}
-      alt={alt}
-      width={size}
-      height={size}
-      loading="lazy"
-      style={{ width: size, height: size, objectFit: 'cover', flex: 'none', border: flush ? 'none' : 'var(--line)', display: 'block' }}
-    />
-  )
+  return <img className="cover" src={src} alt={alt} width={size} height={size} loading="lazy" style={{ width: size, height: size }} />
 }

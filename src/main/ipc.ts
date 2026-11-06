@@ -1,4 +1,4 @@
-import { BrowserWindow, app, dialog, ipcMain, screen, shell, systemPreferences } from 'electron'
+import { BrowserWindow, app, dialog, ipcMain, screen, shell, systemPreferences, nativeTheme } from 'electron'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { createHash } from 'node:crypto'
@@ -198,7 +198,10 @@ export function registerIpc(win: () => BrowserWindow | null): void {
   })
 
   ipcMain.handle('settings:get', (): Settings => settings.get())
-  ipcMain.handle('settings:set', (_e, next: Settings) => settings.set(next))
+  ipcMain.handle('settings:set', (_e, next: Settings) => {
+    nativeTheme.themeSource = next.theme
+    return settings.set(next)
+  })
 
   ipcMain.handle('url:audio', (_e, path: string) => audioUrl(path))
   ipcMain.handle('url:cover', (_e, key: string) => coverUrl(key))
@@ -365,6 +368,8 @@ export function registerIpc(win: () => BrowserWindow | null): void {
       if (savedBounds) w.setBounds(savedBounds, true)
       savedBounds = null
       savedMin = null
+      // feux tricolores : retour dans la barre latérale flottante
+      w.setWindowButtonPosition({ x: 22, y: 22 })
       return
     }
     if (!savedBounds) {
@@ -372,6 +377,8 @@ export function registerIpc(win: () => BrowserWindow | null): void {
       const [mw, mh] = w.getMinimumSize()
       savedMin = [mw, mh]
     }
+    // feux tricolores centrés dans la barre du haut de la scène (44 px)
+    w.setWindowButtonPosition({ x: 14, y: 15 })
     const r = Math.max(0.3, Math.min(3, Number(ratio) || 0.8))
     const extra = Math.max(0, Math.round(Number(extraH) || 0))
     w.setMinimumSize(420, Math.round(420 / r) + extra)

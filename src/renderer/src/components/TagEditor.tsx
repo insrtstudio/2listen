@@ -2,6 +2,7 @@ import { useMemo, useRef, useState } from 'react'
 import type { TagEdit, Track } from '@shared/types'
 import { useStore } from '@/lib/store'
 import Cover from './Cover'
+import Icon from './Icon'
 
 type Field = 'title' | 'artist' | 'albumArtist' | 'album' | 'genre' | 'year' | 'cover'
 
@@ -40,9 +41,7 @@ export default function TagEditor({ tracks, onClose }: { tracks: Track[]; onClos
     opts?: { width?: string; mixed?: boolean }
   ): React.ReactNode => (
     <label style={{ display: 'block', flex: opts?.width ? undefined : 1, width: opts?.width, minWidth: 0 }}>
-      <span className="mono" style={{ fontSize: 8, letterSpacing: '.12em', color: 'var(--ink-soft)', display: 'block', marginBottom: 3 }}>
-        {label}
-      </span>
+      <span className="label" style={{ display: 'block', marginBottom: 4 }}>{label}</span>
       <input
         className="field"
         value={value}
@@ -51,7 +50,6 @@ export default function TagEditor({ tracks, onClose }: { tracks: Track[]; onClos
           dirty.current.add(key)
           set(e.target.value)
         }}
-        style={{ padding: '8px 10px', fontSize: 13 }}
       />
     </label>
   )
@@ -83,43 +81,19 @@ export default function TagEditor({ tracks, onClose }: { tracks: Track[]; onClos
   }
 
   return (
-    <div
-      style={{
-        position: 'fixed',
-        inset: 0,
-        zIndex: 90,
-        background: 'rgba(17,17,17,.45)',
-        display: 'grid',
-        placeItems: 'center'
-      }}
-      onClick={onClose}
-    >
-      <div
-        className="rise"
-        onClick={(e) => e.stopPropagation()}
-        style={{ width: 620, maxWidth: '92vw', background: 'var(--paper)', border: 'var(--line-thick)', boxShadow: '10px 10px 0 rgba(17,17,17,.3)' }}
-      >
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', borderBottom: 'var(--line-thick)' }}>
-          <div>
-            <div className="mono" style={{ fontSize: 8, letterSpacing: '.14em', color: 'var(--accent)' }}>MÉTADONNÉES</div>
-            <div style={{ font: '700 18px var(--grotesk)' }}>
-              {multi ? `Modifier ${tracks.length} pistes` : 'Modifier les infos'}
-            </div>
-          </div>
-          <span className="mono" style={{ fontSize: 8, color: 'var(--ink-soft)', maxWidth: 240, textAlign: 'right' }}>
-            {multi
-              ? 'seuls les champs modifiés seront appliqués à toutes les pistes sélectionnées'
-              : "le fichier audio n'est pas modifié — les corrections vivent dans la bibliothèque et survivent aux rescans"}
-          </span>
+    <div className="veil" onClick={onClose}>
+      <div className="modal glass" style={{ width: 600 }} onClick={(e) => e.stopPropagation()}>
+        <div className="modal-head">
+          <span className="modal-title">{multi ? `Modifier ${tracks.length} morceaux` : 'Modifier les infos'}</span>
+          <button className="ic" title="Fermer" onClick={onClose}><Icon name="close" /></button>
         </div>
 
-        <div style={{ display: 'flex', gap: 16, padding: 16 }}>
-          {/* artwork */}
-          <div style={{ flex: 'none' }}>
-            <Cover coverKey={cover} size={132} alt={album} />
-            <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+        <div style={{ display: 'flex', gap: 16, padding: '4px 20px 12px' }}>
+          <div style={{ flex: 'none', width: 120 }}>
+            <Cover coverKey={cover} size={120} alt={album} />
+            <div style={{ display: 'flex', gap: 4, marginTop: 8 }}>
               <button
-                className="mono tap"
+                className="blk sm grow"
                 onClick={() =>
                   void window.tl.library.pickCover().then((k) => {
                     if (!k) return
@@ -127,45 +101,45 @@ export default function TagEditor({ tracks, onClose }: { tracks: Track[]; onClos
                     setCover(k)
                   })
                 }
-                style={{ fontSize: 8, letterSpacing: '.08em', border: '1.5px solid var(--ink)', padding: '4px 7px', flex: 1 }}
               >
-                CHOISIR…
+                Choisir…
               </button>
               {cover && (
                 <button
-                  className="mono tap"
+                  className="ic xs"
+                  title="Retirer la pochette"
                   onClick={() => {
                     dirty.current.add('cover')
                     setCover(null)
                   }}
-                  title="Retirer la pochette"
-                  style={{ fontSize: 8, border: '1.5px solid var(--ink)', padding: '4px 7px', color: 'var(--accent)' }}
                 >
-                  ✕
+                  <Icon name="close" />
                 </button>
               )}
             </div>
           </div>
 
-          {/* champs */}
           <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {!multi && field('title', 'TITRE', title, setTitle)}
+            {!multi && field('title', 'Titre', title, setTitle)}
             <div style={{ display: 'flex', gap: 10 }}>
-              {field('artist', 'ARTISTE', artist, setArtist, { mixed: common.artist.mixed })}
-              {field('albumArtist', "ARTISTE DE L'ALBUM", albumArtist, setAlbumArtist, { mixed: common.albumArtist.mixed })}
+              {field('artist', 'Artiste', artist, setArtist, { mixed: common.artist.mixed })}
+              {field('albumArtist', "Artiste de l'album", albumArtist, setAlbumArtist, { mixed: common.albumArtist.mixed })}
             </div>
             <div style={{ display: 'flex', gap: 10 }}>
-              {field('album', 'ALBUM', album, setAlbum, { mixed: common.album.mixed })}
-              {field('genre', 'GENRE', genre, setGenre, { mixed: common.genre.mixed })}
-              {field('year', 'ANNÉE', year, setYear, { width: '86px', mixed: common.year.mixed })}
+              {field('album', 'Album', album, setAlbum, { mixed: common.album.mixed })}
+              {field('genre', 'Genre', genre, setGenre, { mixed: common.genre.mixed })}
+              {field('year', 'Année', year, setYear, { width: '76px', mixed: common.year.mixed })}
             </div>
           </div>
         </div>
 
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, padding: '0 16px 16px' }}>
-          <button className="blk tap" onClick={onClose}>Annuler</button>
-          <button className="blk acc tap" onClick={() => void save()} disabled={saving}>
-            {saving ? 'Enregistrement…' : multi ? `Appliquer à ${tracks.length} pistes` : 'Enregistrer'}
+        <div className="modal-foot">
+          <span className="dim grow" style={{ fontSize: 11.5 }}>
+            {multi ? 'Seuls les champs modifiés sont appliqués.' : "Le fichier audio n'est pas modifié."}
+          </span>
+          <button className="blk" onClick={onClose}>Annuler</button>
+          <button className="blk acc" onClick={() => void save()} disabled={saving}>
+            {saving ? 'Enregistrement…' : multi ? `Appliquer à ${tracks.length} morceaux` : 'Enregistrer'}
           </button>
         </div>
       </div>

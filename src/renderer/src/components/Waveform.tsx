@@ -168,14 +168,8 @@ export default function Waveform({ track, source }: { track: Track | null; sourc
           gonfler la hauteur de la barre de lecture */}
       <canvas ref={canvasRef} width={0} height={0} style={{ position: 'absolute', inset: 0, display: 'block' }} />
       {loading && track && (
-        <span
-          className="mono"
-          style={{
-            position: 'absolute', left: 10, top: 6, fontSize: 9, color: 'var(--ink-soft)',
-            animation: 'blink 1s steps(1) infinite'
-          }}
-        >
-          ANALYSE DE L'ONDE…
+        <span className="mono dim pulse" style={{ position: 'absolute', left: 6, top: 4, fontSize: 10 }}>
+          Analyse de l'onde…
         </span>
       )}
       {hoverLabel && track && (
@@ -183,13 +177,14 @@ export default function Waveform({ track, source }: { track: Track | null; sourc
           className="mono"
           style={{
             position: 'absolute',
-            left: `min(max(${hoverLabel.x * 100}%, 24px), calc(100% - 30px))`,
-            top: -2,
+            left: `min(max(${hoverLabel.x * 100}%, 22px), calc(100% - 22px))`,
+            top: 0,
             transform: 'translateX(-50%)',
-            fontSize: 9,
+            fontSize: 9.5,
             background: 'var(--ink)',
             color: 'var(--paper)',
-            padding: '1px 5px',
+            padding: '1px 6px',
+            borderRadius: 999,
             pointerEvents: 'none'
           }}
         >

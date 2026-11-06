@@ -7,6 +7,7 @@ import { player } from '@/lib/player'
 import { ClipRecorder, clipExt, pickClipMime } from '@/lib/recorder'
 import { FORMATS, Stage, clipName, loadStageFonts, parseVersion, type StageFormat, type StageState } from '@/lib/stage'
 import { useStore } from '@/lib/store'
+import Icon from './Icon'
 
 const TOP = 44 // barre du haut (feux macOS + sortie)
 const CTRL = 92 // deux rangées de commandes
@@ -30,42 +31,6 @@ function loadPrefs(appTheme: 'light' | 'dark'): Prefs {
     /* préférences illisibles */
   }
   return def
-}
-
-/** Petit bouton de commande, style bloc. */
-function Cmd({
-  children,
-  on,
-  onClick,
-  title,
-  disabled,
-  acc
-}: {
-  children: React.ReactNode
-  on?: boolean
-  onClick: () => void
-  title?: string
-  disabled?: boolean
-  acc?: boolean
-}): React.ReactNode {
-  return (
-    <button
-      className={`blk tap ${acc ? 'acc' : ''}`}
-      title={title}
-      disabled={disabled}
-      onClick={onClick}
-      style={{
-        padding: '6px 10px',
-        fontSize: 11,
-        background: on ? 'var(--ink)' : undefined,
-        color: on ? 'var(--paper)' : undefined,
-        whiteSpace: 'nowrap',
-        flex: 'none'
-      }}
-    >
-      {children}
-    </button>
-  )
 }
 
 export default function StreamerView(): React.ReactNode {
@@ -92,6 +57,7 @@ export default function StreamerView(): React.ReactNode {
   const [recSec, setRecSec] = useState(0)
   const [notice, setNotice] = useState<{ text: string; path?: string; error?: boolean } | null>(null)
   const [picker, setPicker] = useState(false)
+  const [scene, setScene] = useState(false)
   const [q, setQ] = useState('')
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
@@ -334,6 +300,7 @@ export default function StreamerView(): React.ReactNode {
       if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return
       if (e.key === 'Escape') {
         if (picker) setPicker(false)
+        else if (scene) setScene(false)
         else if (rec === 'idle') setStreamer(false)
       } else if (e.key === ' ') {
         e.preventDefault()
@@ -342,7 +309,7 @@ export default function StreamerView(): React.ReactNode {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [picker, rec, setStreamer])
+  }, [picker, scene, rec, setStreamer])
 
   // clic sur la forme d'onde de la scène = seek
   const onStagePointer = (e: React.PointerEvent<HTMLCanvasElement>): void => {
@@ -371,34 +338,23 @@ export default function StreamerView(): React.ReactNode {
     setQ('')
   }
 
-  const sep = <span style={{ width: 2, alignSelf: 'stretch', background: 'var(--ink)', opacity: 0.25, flex: 'none' }} />
-
   return (
-    <div data-theme={prefs.theme} style={{ position: 'fixed', inset: 0, zIndex: 90, background: 'var(--paper)', color: 'var(--ink)', display: 'flex', flexDirection: 'column' }}>
+    <div className="streamer" data-theme={prefs.theme}>
       {/* barre du haut : zone de drag, feux macOS à gauche */}
-      <div
-        className="drag"
-        style={{ height: TOP, flex: 'none', borderBottom: 'var(--line-thick)', display: 'flex', alignItems: 'center', gap: 10, padding: '0 12px 0 88px' }}
-      >
-        <span className="mono" style={{ fontSize: 9, letterSpacing: '.16em', color: 'var(--accent)', whiteSpace: 'nowrap' }}>
-          STREAMER MODE
-        </span>
-        <span className="mono" style={{ fontSize: 9, color: 'var(--ink-soft)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-          {fmt.name} · {fmt.w}×{fmt.h} · {ext.toUpperCase()}
-        </span>
-        <div style={{ flex: 1 }} />
-        {rec === 'rec' && (
-          <span className="mono" style={{ fontSize: 9, color: 'var(--accent)', letterSpacing: '.12em', animation: 'blink 1s steps(1) infinite' }}>
-            ● REC
+      <div className="st-top drag">
+        <span className="toolbar-title" style={{ fontSize: 14 }}>Streamer</span>
+        <span className="toolbar-sub">{fmt.name}</span>
+        {(camError || micError) && (
+          <span className="toolbar-sub" style={{ color: 'var(--accent-2)' }} title={(camError ?? micError) || undefined}>
+            {camError ? 'No camera' : 'No mic'}
           </span>
         )}
-        <button className="blk tap no-drag" onClick={() => setStreamer(false)} disabled={rec !== 'idle'} title="Esc" style={{ padding: '5px 10px', fontSize: 11 }}>
-          Exit
-        </button>
+        <div className="grow" />
+        {rec === 'rec' && <span className="rec-pill"><i className="pulse" />REC</span>}
+        <button className="blk sm no-drag" onClick={() => setStreamer(false)} disabled={rec !== 'idle'} title="Esc">Exit</button>
       </div>
 
-      {/* scène */}
-      <div style={{ flex: 1, minHeight: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--paper-2)', position: 'relative', overflow: 'hidden' }}>
+      <div className="st-stage">
         <canvas
           ref={canvasRef}
           data-stage
@@ -407,157 +363,129 @@ export default function StreamerView(): React.ReactNode {
           onPointerDown={onStagePointer}
           style={{ maxWidth: '100%', maxHeight: '100%', display: 'block', cursor: track ? 'crosshair' : 'default' }}
         />
-        {(camError || micError) && (
-          <div className="mono" style={{ position: 'absolute', left: 10, top: 10, fontSize: 9, background: 'var(--ink)', color: 'var(--paper)', padding: '4px 8px', maxWidth: '80%' }}>
-            {camError ? `CAMERA: ${camError}` : `MIC: ${micError}`}
-          </div>
-        )}
         {notice && (
-          <div
-            className="rise"
-            style={{
-              position: 'absolute', left: 12, right: 12, bottom: 12, display: 'flex', alignItems: 'center', gap: 10,
-              background: notice.error ? 'var(--accent)' : 'var(--ink)', color: notice.error ? '#111' : 'var(--paper)',
-              padding: '8px 12px', font: '700 11px var(--grotesk)', letterSpacing: '.06em', textTransform: 'uppercase'
-            }}
-          >
-            <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {notice.text}
-              {notice.path && <span className="mono" style={{ opacity: 0.7, marginLeft: 8, textTransform: 'none', letterSpacing: 0 }}>{notice.path}</span>}
-            </span>
-            {notice.path && (
-              <button className="tap" style={{ color: 'var(--accent)', font: '700 11px var(--grotesk)', letterSpacing: '.06em' }} onClick={() => void window.tl.track.reveal(notice.path!)}>
-                REVEAL
-              </button>
-            )}
-            <button className="tap" style={{ font: '700 12px var(--grotesk)' }} onClick={() => setNotice(null)}>
-              ✕
-            </button>
+          <div className={`st-note rise ${notice.error ? 'error' : ''}`}>
+            <span className="ell grow" title={notice.path}>{notice.text}</span>
+            {notice.path && <button className="blk sm" onClick={() => void window.tl.track.reveal(notice.path!)}>Show in Finder</button>}
+            <button className="ic xs" title="Dismiss" onClick={() => setNotice(null)}><Icon name="close" /></button>
           </div>
         )}
         {picker && (
-          <div style={{ position: 'absolute', left: 12, right: 12, bottom: 12, zIndex: 5, background: 'var(--paper)', border: 'var(--line-thick)', boxShadow: '6px 6px 0 rgba(17,17,17,.25)' }}>
+          <div className="dropdown" style={{ top: 'auto', left: 10, right: 10, bottom: 10, zIndex: 5 }}>
             <input
               autoFocus
               className="field"
-              placeholder="Search tracks…"
+              placeholder="Search tracks"
               value={q}
               onChange={(e) => setQ(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === 'Escape') setPicker(false)
                 if (e.key === 'Enter' && results[0]) pick(results[0])
               }}
-              style={{ border: 'none', borderBottom: 'var(--line)' }}
             />
-            <div style={{ maxHeight: 260, overflowY: 'auto' }}>
+            <div className="list">
               {results.map((t) => (
-                <button
-                  key={t.id}
-                  onClick={() => pick(t)}
-                  className="hov"
-                  style={{
-                    display: 'block', width: '100%', textAlign: 'left', padding: '7px 12px', borderBottom: 'var(--line)',
-                    font: '500 12px var(--grotesk)', color: t.id === track?.id ? 'var(--accent)' : undefined
-                  }}
-                >
-                  {t.title} <span className="mono" style={{ fontSize: 9, color: 'var(--ink-soft)' }}>— {t.artist}</span>
+                <button key={t.id} className={`opt ${t.id === track?.id ? 'cur' : ''}`} onClick={() => pick(t)}>
+                  <span className="ell">{t.title}</span>
+                  <span className="dim ell" style={{ flex: 'none', maxWidth: '45%', fontSize: 11 }}>{t.artist}</span>
                 </button>
               ))}
-              {results.length === 0 && (
-                <div className="serif" style={{ fontStyle: 'italic', color: 'var(--ink-soft)', padding: '8px 12px' }}>Nothing found.</div>
-              )}
+              {results.length === 0 && <div className="dim" style={{ padding: '6px 9px' }}>Nothing found.</div>}
             </div>
           </div>
         )}
       </div>
 
-      {/* commandes : deux rangées */}
-      <div style={{ height: CTRL, flex: 'none', borderTop: 'var(--line-thick)', display: 'flex', flexDirection: 'column' }}>
-        <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 8, padding: '0 10px', borderBottom: 'var(--line)', minWidth: 0, overflow: 'hidden' }}>
-          {rec === 'idle' ? (
-            <Cmd acc onClick={() => void startRec()} disabled={!track || !mime} title={mime ? 'Start recording' : 'MediaRecorder unavailable'}>
-              ● Record
-            </Cmd>
-          ) : (
-            <Cmd on onClick={() => void stopRec()} disabled={rec === 'saving'} title="Stop and export">
-              ■ {rec === 'saving' ? 'Exporting…' : 'Stop'}
-            </Cmd>
-          )}
-          <span className="mono" style={{ fontSize: 12, minWidth: 44, color: rec === 'rec' ? 'var(--accent)' : 'var(--ink-soft)' }}>
-            {fmtDuration(recSec)}
-          </span>
-          {sep}
-          <Cmd onClick={() => player.prev()} title="Previous">⏮</Cmd>
-          <Cmd onClick={() => player.toggle()} title="Play / pause (Space)" on={snap.playing}>
-            {snap.playing ? '❚❚' : '▶'}
-          </Cmd>
-          <Cmd onClick={() => player.next()} title="Next">⏭</Cmd>
-          {sep}
-          <button
-            className="tap"
-            onClick={() => setPicker((v) => !v)}
-            title="Pick a track"
-            style={{ flex: 1, minWidth: 0, textAlign: 'left', display: 'flex', flexDirection: 'column', gap: 1 }}
-          >
-            <span style={{ font: '700 12px/1.2 var(--grotesk)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', width: '100%' }}>
-              {track ? track.title : 'Pick a track…'}
-            </span>
-            <span className="mono" style={{ fontSize: 9, color: 'var(--ink-soft)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', width: '100%' }}>
-              {track ? track.artist : 'click to open the list'}
-            </span>
-          </button>
-          <Cmd onClick={() => setPicker((v) => !v)} on={picker}>Track</Cmd>
+      {scene && (
+        <div className="st-pop">
+          <div className="grow-row" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 5 }}>
+            <span className="label">Camera</span>
+            <select className="field" value={prefs.camera} onChange={(e) => patch({ camera: e.target.value })}>
+              <option value="">Default camera</option>
+              {cams.map((c, i) => (
+                <option key={c.deviceId} value={c.deviceId}>{c.label || `Camera ${i + 1}`}</option>
+              ))}
+            </select>
+          </div>
+          <label className="grow-row switch" title="Flip the image, like a selfie">
+            Mirror
+            <input type="checkbox" checked={prefs.mirror} onChange={(e) => patch({ mirror: e.target.checked })} />
+          </label>
+          <label className="grow-row switch" title="Mix the mic into the clip">
+            Microphone
+            <input type="checkbox" checked={prefs.mic} disabled={rec !== 'idle'} onChange={(e) => patch({ mic: e.target.checked })} />
+          </label>
+          <label className="grow-row switch">
+            Dark stage
+            <input type="checkbox" checked={prefs.theme === 'dark'} onChange={(e) => patch({ theme: e.target.checked ? 'dark' : 'light' })} />
+          </label>
         </div>
-        <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 8, padding: '0 10px', minWidth: 0, overflow: 'hidden' }}>
-          <span style={{ display: 'flex', flex: 'none' }}>
-            {(Object.keys(FORMATS) as StageFormat[]).map((f, i) => (
+      )}
+
+      <div className="st-ctrl">
+        <div className="st-row">
+          {rec === 'idle' ? (
+            <button className="blk acc" onClick={() => void startRec()} disabled={!track || !mime} title={mime ? 'Start recording' : 'MediaRecorder unavailable'}>
+              <Icon name="rec" />
+              Record
+            </button>
+          ) : (
+            <button className="blk on" onClick={() => void stopRec()} disabled={rec === 'saving'} title="Stop and export">
+              <Icon name="stop" />
+              {rec === 'saving' ? 'Exporting…' : 'Stop'}
+            </button>
+          )}
+          {rec !== 'idle' && (
+            <span className="mono" style={{ fontSize: 12, color: 'var(--accent-2)' }}>{fmtDuration(recSec)}</span>
+          )}
+          <div className="ptransport">
+            <button className="ic" title="Previous" onClick={() => player.prev()}><Icon name="prev" /></button>
+            <button className="ic" title="Play / pause (Space)" onClick={() => player.toggle()}><Icon name={snap.playing ? 'pause' : 'play'} /></button>
+            <button className="ic" title="Next" onClick={() => player.next()}><Icon name="next" /></button>
+          </div>
+          <button
+            className={`st-track grow ${picker ? 'on' : ''}`}
+            onClick={() => {
+              setPicker((v) => !v)
+              setScene(false)
+            }}
+            title="Pick a track"
+                      >
+            <div className="ell" style={{ font: '600 12.5px/1.25 var(--grotesk)' }}>{track ? track.title : 'Pick a track…'}</div>
+            {track && <div className="ell dim" style={{ fontSize: 11.5 }}>{track.artist}</div>}
+          </button>
+        </div>
+        <div className="st-row">
+          <div className="seg">
+            {(Object.keys(FORMATS) as StageFormat[]).map((f) => (
               <button
                 key={f}
-                className="tap"
+                className={prefs.format === f ? 'on' : ''}
                 disabled={rec !== 'idle'}
                 onClick={() => patch({ format: f })}
                 title={FORMATS[f].name}
-                style={{
-                  border: '2px solid var(--ink)', marginLeft: i ? -2 : 0, padding: '5px 8px', font: '700 11px var(--grotesk)',
-                  background: prefs.format === f ? 'var(--accent)' : 'transparent', color: prefs.format === f ? '#111' : 'inherit',
-                  opacity: rec !== 'idle' && prefs.format !== f ? 0.35 : 1
-                }}
               >
                 {FORMATS[f].label}
               </button>
             ))}
-          </span>
-          {sep}
-          <select
-            className="field"
-            value={prefs.camera}
-            onChange={(e) => patch({ camera: e.target.value })}
-            title="Camera"
-            style={{ flex: 1, minWidth: 80, padding: '5px 8px', fontSize: 11, height: 30 }}
-          >
-            <option value="">Default camera</option>
-            {cams.map((c, i) => (
-              <option key={c.deviceId} value={c.deviceId}>
-                {c.label || `Camera ${i + 1}`}
-              </option>
-            ))}
-          </select>
-          <Cmd on={prefs.theme === 'dark'} onClick={() => patch({ theme: prefs.theme === 'dark' ? 'light' : 'dark' })} title="Dark stage theme">
-            Dark
-          </Cmd>
-          <Cmd on={prefs.mirror} onClick={() => patch({ mirror: !prefs.mirror })} title="Mirror the image (selfie)">Mirror</Cmd>
-          <Cmd on={prefs.mic} onClick={() => patch({ mic: !prefs.mic })} title="Mix the mic into the clip" disabled={rec !== 'idle'}>
-            Mic
-          </Cmd>
-          {sep}
+          </div>
           <input
-            className="field"
+            className="field grow"
             value={version}
             onChange={(e) => editVersion(e.target.value)}
             placeholder="Version (v3, Club Mix…)"
             title="Version shown on the stage"
-            style={{ width: 150, flex: 'none', padding: '5px 8px', fontSize: 11, height: 30 }}
           />
+          <button
+            className={`ic ${scene ? 'on' : ''}`}
+            title="Camera, mirror, mic, theme"
+            onClick={() => {
+              setScene((v) => !v)
+              setPicker(false)
+            }}
+          >
+            <Icon name="gear" />
+          </button>
         </div>
       </div>
     </div>

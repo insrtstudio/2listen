@@ -1,28 +1,42 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useStore } from '@/lib/store'
+import Icon from './Icon'
 
 const INTERNAL = 'application/x-2listen-track'
 
-/** Sélecteur de piste (recherche + liste), partagé entre Comparer et la table de mix. */
+/** Sélecteur de morceau (recherche, liste, dépôt), partagé entre Comparer et la table de mix. */
 export default function TrackPicker({
   label,
-  color,
+  accent,
+  placeholder,
   trackId,
   onPick,
   bare
 }: {
   label: string
-  color: string
+  accent?: boolean
+  placeholder: string
   trackId: string | null
   onPick: (id: string | null) => void
-  /** sans bordure extérieure ni pastille (déjà fournies par le parent) */
+  /** sans carte : le parent la fournit déjà */
   bare?: boolean
 }): React.ReactNode {
   const { tracks, addPaths } = useStore()
   const [q, setQ] = useState('')
   const [open, setOpen] = useState(false)
   const [hot, setHot] = useState(false)
+  const rootRef = useRef<HTMLDivElement | null>(null)
   const picked = tracks.find((t) => t.id === trackId) ?? null
+
+  // un clic ailleurs referme la liste
+  useEffect(() => {
+    if (!open) return
+    const onDown = (e: PointerEvent): void => {
+      if (!rootRef.current?.contains(e.target as Node)) setOpen(false)
+    }
+    window.addEventListener('pointerdown', onDown)
+    return () => window.removeEventListener('pointerdown', onDown)
+  }, [open])
 
   const acceptsDrag = (e: React.DragEvent): boolean =>
     e.dataTransfer.types.includes(INTERNAL) || e.dataTransfer.types.includes('Files')
@@ -52,7 +66,9 @@ export default function TrackPicker({
 
   return (
     <div
+      ref={rootRef}
       data-dropzone={label}
+      className={`card picker ${bare ? 'bare' : ''} ${hot ? 'hot' : ''}`}
       onDragOver={(e) => {
         if (!acceptsDrag(e)) return
         e.preventDefault()
@@ -61,94 +77,51 @@ export default function TrackPicker({
       }}
       onDragLeave={() => setHot(false)}
       onDrop={(e) => void onDrop(e)}
-      style={{
-        flex: 1,
-        minWidth: 0,
-        border: bare ? 'none' : 'var(--line)',
-        position: 'relative',
-        background: 'var(--paper)',
-        outline: hot ? '3px solid var(--accent)' : 'none',
-        outlineOffset: -3
-      }}
     >
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 10,
-          padding: '8px 12px',
-          borderBottom: open ? 'var(--line)' : 'none'
-        }}
-      >
-        {!bare && (
-          <span
-            style={{
-              width: 26,
-              height: 26,
-              flex: 'none',
-              display: 'grid',
-              placeItems: 'center',
-              background: color,
-              color: '#111',
-              font: '700 13px var(--grotesk)',
-              border: '2px solid var(--ink)'
-            }}
-          >
-            {label}
-          </span>
-        )}
+      <div className="picker-row">
+        <span className={`dot ${accent ? 'a' : ''}`}>{label}</span>
         {picked ? (
-          <div style={{ minWidth: 0, flex: 1 }}>
-            <div style={{ font: '700 13px/1.2 var(--grotesk)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-              {picked.title}
-            </div>
-            <div className="mono" style={{ fontSize: 9, color: 'var(--ink-soft)' }}>
-              {picked.artist} · {picked.codec}
-            </div>
+          <div className="grow">
+            <div className="t ell" title={picked.title}>{picked.title}</div>
+            <div className="s ell">{picked.artist} · {picked.codec}</div>
           </div>
         ) : (
-          <span className="serif" style={{ fontStyle: 'italic', color: 'var(--ink-soft)', flex: 1 }}>
-            {label === 'A' ? 'Choisir votre mix…' : 'Choisir la référence…'}
-          </span>
+          <span className="dim grow ell">{placeholder}</span>
         )}
-        <button className="mono tap" onClick={() => setOpen((v) => !v)}
-          style={{ fontSize: 9, letterSpacing: '.1em', border: '1.5px solid var(--ink)', padding: '3px 8px', flex: 'none' }}>
-          {picked ? 'CHANGER' : 'CHOISIR'}
-        </button>
+        <button className="blk sm" onClick={() => setOpen((v) => !v)}>{picked ? 'Changer' : 'Choisir'}</button>
         {picked && (
-          <button className="tap" title="Vider" onClick={() => onPick(null)}
-            style={{ color: 'var(--accent)', font: '700 13px var(--grotesk)', flex: 'none' }}>
-            ✕
-          </button>
+          <button className="ic xs" title="Vider" onClick={() => onPick(null)}><Icon name="close" /></button>
         )}
       </div>
       {open && (
-        <div style={{ position: 'absolute', left: -2, right: -2, top: '100%', zIndex: 40, background: 'var(--paper)', border: 'var(--line-thick)', boxShadow: '6px 6px 0 rgba(17,17,17,.25)' }}>
+        <div className="dropdown">
           <input
             autoFocus
             className="field"
-            placeholder="Rechercher…"
+            placeholder="Rechercher"
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            style={{ border: 'none', borderBottom: 'var(--line)' }}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') setOpen(false)
+            }}
           />
-          {results.map((t) => (
-            <button
-              key={t.id}
-              onClick={() => {
-                onPick(t.id)
-                setOpen(false)
-                setQ('')
-              }}
-              style={{ display: 'block', width: '100%', textAlign: 'left', padding: '7px 12px', borderBottom: 'var(--line)', font: '500 12px var(--grotesk)' }}
-              className="hov"
-            >
-              {t.title} <span className="mono" style={{ fontSize: 9, color: 'var(--ink-soft)' }}>— {t.artist}</span>
-            </button>
-          ))}
-          {results.length === 0 && (
-            <div className="serif" style={{ fontStyle: 'italic', color: 'var(--ink-soft)', padding: '8px 12px' }}>Rien trouvé.</div>
-          )}
+          <div className="list">
+            {results.map((t) => (
+              <button
+                key={t.id}
+                className={`opt ${t.id === trackId ? 'cur' : ''}`}
+                onClick={() => {
+                  onPick(t.id)
+                  setOpen(false)
+                  setQ('')
+                }}
+              >
+                <span className="ell">{t.title}</span>
+                <span className="dim ell" style={{ flex: 'none', maxWidth: '45%', fontSize: 11 }}>{t.artist}</span>
+              </button>
+            ))}
+            {results.length === 0 && <div className="dim" style={{ padding: '6px 9px' }}>Rien trouvé.</div>}
+          </div>
         </div>
       )}
     </div>

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { fmtNote } from '@/lib/notes'
 import { getAnalyser, resumeRta, rtaSampleRate } from '@/lib/rta'
+import Icon from './Icon'
 
 /**
  * Analyseur spectral temps réel (façon Clarity M / PAZ) :
@@ -66,7 +67,7 @@ export default function RtaPanel({ onClose }: { onClose: () => void }): React.Re
       const Y = (v: number): number => 6 + ((yMax - v) / (yMax - yMin)) * (h - 24)
 
       // grilles
-      ctx2.font = '8px "Fragment Mono", monospace'
+      ctx2.font = '9px "Fragment Mono", monospace'
       ctx2.strokeStyle = soft
       ctx2.fillStyle = soft
       ctx2.globalAlpha = 0.25
@@ -178,36 +179,14 @@ export default function RtaPanel({ onClose }: { onClose: () => void }): React.Re
   }, [])
 
   return (
-    <div
-      className="rise"
-      style={{
-        position: 'absolute',
-        left: 0,
-        right: 0,
-        bottom: '100%',
-        height: 280,
-        background: 'var(--paper)',
-        borderTop: 'var(--line-thick)',
-        display: 'flex',
-        flexDirection: 'column',
-        zIndex: 50,
-        boxShadow: '0 -8px 24px rgba(17,17,17,.12)'
-      }}
-    >
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '7px 14px', borderBottom: 'var(--line)' }}>
-        <span className="mono" style={{ fontSize: 9, letterSpacing: '.14em', color: 'var(--accent)' }}>
-          ANALYSEUR SPECTRAL — TEMPS RÉEL
-        </span>
-        <span className="mono" style={{ fontSize: 8, color: 'var(--ink-soft)' }}>
-          courbe : instantané &nbsp;·&nbsp; trait fin : peak hold
-        </span>
-        <button className="mono tap" onClick={onClose}
-          style={{ fontSize: 9, letterSpacing: '.1em', border: '1.5px solid var(--ink)', padding: '3px 8px' }}>
-          FERMER
-        </button>
+    <div className="card rta rise">
+      <div className="phead" style={{ paddingRight: 6 }}>
+        <span className="label">Analyseur spectral</span>
+        <span className="dim grow" style={{ fontSize: 11.5 }}>Courbe : instantané · Trait fin : peak hold</span>
+        <button className="ic xs" title="Fermer" onClick={onClose}><Icon name="close" /></button>
       </div>
       {unavailable ? (
-        <div className="serif" style={{ flex: 1, display: 'grid', placeItems: 'center', fontStyle: 'italic', color: 'var(--ink-soft)' }}>
+        <div className="empty" style={{ flex: 1, display: 'grid', placeItems: 'center' }}>
           Analyseur indisponible sur cette sortie audio.
         </div>
       ) : (

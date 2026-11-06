@@ -61,7 +61,7 @@ export function clipName(track: Track | null, version: string, ext: string): str
 
 const TEXT_FONTS = [
   '700 72px "Space Grotesk"',
-  '500 20px "Space Grotesk"',
+  '500 24px "Space Grotesk"',
   'italic 400 40px "Instrument Serif"',
   '400 20px "Fragment Mono"'
 ]
@@ -75,8 +75,17 @@ export async function loadStageFonts(): Promise<void> {
 }
 
 interface ThemeColors extends WaveColors {
-  paper: string
-  paper3: string
+  /** Fond opaque de la scène (le canvas n'a pas de canal alpha). */
+  bg: string
+  /** Fond des cartes. */
+  card: string
+  /** Fond du cadre caméra vide. */
+  well: string
+  /** Accent lisible sur une carte (contraste du texte). */
+  accentText: string
+  /** Filets : contour des cartes et séparateurs. */
+  edge: string
+  sep: string
 }
 
 /** Tonalité en anglais pour la scène (l'analyse nomme les notes en français). */
@@ -95,12 +104,17 @@ function themeColors(el: Element): ThemeColors {
   // tout est lu sur le canvas : l'overlay streamer porte son propre
   // [data-theme], indépendant du thème de l'app
   const styles = getComputedStyle(el)
+  const read = (name: string, fallback: string): string => styles.getPropertyValue(name).trim() || fallback
   return {
-    ink: styles.getPropertyValue('--ink').trim() || '#111',
-    soft: styles.getPropertyValue('--ink-soft').trim() || '#77726a',
-    accent: styles.getPropertyValue('--accent').trim() || '#ff4d00',
-    paper: styles.getPropertyValue('--paper').trim() || '#ece9e2',
-    paper3: styles.getPropertyValue('--paper-3').trim() || '#dbd7cc'
+    ink: read('--ink', '#1b1a18'),
+    soft: read('--ink-soft', '#77726a'),
+    accent: read('--accent', '#ff4d00'),
+    accentText: read('--accent-2', '#d94100'),
+    bg: read('--scene-bg', '#e6e3db'),
+    card: read('--paper', '#f6f4ef'),
+    well: read('--paper-2', '#edeae3'),
+    edge: read('--glass-edge', 'rgb(27 26 24 / 11%)'),
+    sep: read('--sep', 'rgb(27 26 24 / 10%)')
   }
 }
 
@@ -139,8 +153,11 @@ function fitTitle(ctx: CanvasRenderingContext2D, text: string, maxW: number, max
     if (lines.length <= maxLines && lines.every((l) => ctx.measureText(l).width <= maxW)) return { size, lines }
   }
   ctx.font = '700 40px "Space Grotesk"'
-  const lines = wrap(ctx, text, maxW).slice(0, maxLines)
-  lines[lines.length - 1] = ellipsize(ctx, lines[lines.length - 1], maxW)
+  const all = wrap(ctx, text, maxW)
+  const lines = all.slice(0, maxLines)
+  // le mot suivant force les points de suspension quand des lignes sont retirées
+  const last = lines.length - 1
+  lines[last] = ellipsize(ctx, all.length > maxLines ? `${lines[last]} ${all[maxLines]}` : lines[last], maxW)
   return { size: 40, lines }
 }
 
@@ -178,6 +195,14 @@ class WaveCache {
   }
 }
 
+// Mesures Tahoe de l'app (carte 12 px, gouttière 8 px) à l'échelle d'un clip
+// regardé sur téléphone : 1080 px de large pour environ 390 pt d'écran.
+const MARGIN = 36
+const GUTTER = 18
+const RADIUS = 34
+const RADIUS_INNER = 20
+const PADDING = 30
+
 export class Stage {
   readonly canvas: HTMLCanvasElement
   private ctx: CanvasRenderingContext2D
@@ -201,11 +226,33 @@ export class Stage {
     }
   }
 
+  /** Carte Tahoe : surface pleine et filet fin, sans ombre (coût par image à 30 i/s). */
+  private card(r: Rect, c: ThemeColors): void {
+    const ctx = this.ctx
+    ctx.beginPath()
+    ctx.roundRect(r.x, r.y, r.w, r.h, RADIUS)
+    ctx.fillStyle = c.card
+    ctx.fill()
+    this.hairline(r, RADIUS, c)
+  }
+
+  private hairline(r: Rect, radius: number, c: ThemeColors): void {
+    const ctx = this.ctx
+    ctx.beginPath()
+    ctx.roundRect(r.x + 0.75, r.y + 0.75, r.w - 1.5, r.h - 1.5, radius)
+    ctx.strokeStyle = c.edge
+    ctx.lineWidth = 1.5
+    ctx.stroke()
+  }
+
   draw(s: StageState): void {
     const ctx = this.ctx
     const { w: W, h: H } = FORMATS[this.format]
     const c = themeColors(this.canvas)
-    const M = 64
+    const M = MARGIN
+    const P = PADDING
+    const square = this.format === 'square'
+    const cardW = W - 2 * M
     const t = s.track
 
     if (s.peaks !== this.lastPeaks) {
@@ -215,21 +262,36 @@ export class Stage {
 
     ctx.setTransform(1, 0, 0, 1, 0, 0)
     ctx.globalAlpha = 1
-    ctx.fillStyle = c.paper
+    ctx.fillStyle = c.bg
     ctx.fillRect(0, 0, W, H)
     ctx.textBaseline = 'alphabetic'
 
-    // ---- en-tête : marque, pulsation au tempo, temps ------------------------
-    ctx.font = '400 22px "Fragment Mono"'
+    // ---- carte du morceau : mise en page d'abord, sa hauteur dépend du titre --
+    const coverSize = square ? 112 : 136
+    const hasCover = !!s.cover
+    const headY = M + P + 20
+    const y0 = headY + 30
+    const textX = M + P + (hasCover ? coverSize + 28 : 0)
+    const textW = W - M - P - textX
+    const title = t ? t.title : 'No track'
+    const fit = fitTitle(ctx, title, textW, square ? 1 : 2)
+    const titleTop = y0 + fit.size * 0.92
+    const artistY = titleTop + (fit.lines.length - 1) * fit.size * 1.02 + fit.size * 0.3 + 40
+    const contentBottom = Math.max(hasCover ? y0 + coverSize : 0, artistY + 12)
+    const headCard = { x: M, y: M, w: cardW, h: contentBottom + P - M }
+    this.card(headCard, c)
+
+    ctx.font = '700 24px "Space Grotesk"'
     ctx.textAlign = 'left'
     ctx.fillStyle = c.ink
-    ctx.fillText('2LISTEN', M, M + 18)
-    const brandW = ctx.measureText('2LISTEN').width
+    ctx.fillText('2Listen', M + P, headY)
+    const brandW = ctx.measureText('2Listen').width
+    ctx.font = '500 24px "Space Grotesk"'
     ctx.fillStyle = c.soft
-    ctx.fillText('— NOW PLAYING', M + brandW + 14, M + 18)
-    const labelW = brandW + 14 + ctx.measureText('— NOW PLAYING').width
+    ctx.fillText('Now playing', M + P + brandW + 14, headY)
+    const labelW = brandW + 14 + ctx.measureText('Now playing').width
 
-    // carré orange qui bat la mesure (grille BPM de l'analyse)
+    // point orange qui bat la mesure (grille BPM de l'analyse)
     const a = s.analysis
     if (a && a.bpm > 0) {
       const period = 60 / a.bpm
@@ -237,36 +299,35 @@ export class Stage {
       const beat = s.playing ? 1 - Math.min(1, phase / (period * 0.6)) : 0.25
       ctx.fillStyle = c.accent
       ctx.globalAlpha = 0.25 + 0.75 * beat
-      ctx.fillRect(M + labelW + 22, M, 20, 20)
+      ctx.beginPath()
+      ctx.arc(M + P + labelW + 28, headY - 8, 10, 0, Math.PI * 2)
+      ctx.fill()
       ctx.globalAlpha = 1
     }
 
+    ctx.font = '400 22px "Fragment Mono"'
     ctx.textAlign = 'right'
-    ctx.fillStyle = c.ink
-    ctx.fillText(`${fmtDuration(s.time)} / ${fmtDuration(s.duration)}`, W - M, M + 18)
+    ctx.fillStyle = c.soft
+    ctx.fillText(`${fmtDuration(s.time)} / ${fmtDuration(s.duration)}`, W - M - P, headY)
     ctx.textAlign = 'left'
 
-    // ---- titre / artiste (+ pochette) ---------------------------------------
-    const y0 = M + 60
-    const coverSize = this.format === 'square' ? 112 : 136
-    let textX = M
     if (s.cover) {
-      ctx.fillStyle = c.ink
-      ctx.fillRect(M, y0, coverSize, coverSize)
+      const cover: Rect = { x: M + P, y: y0, w: coverSize, h: coverSize }
+      ctx.save()
+      ctx.beginPath()
+      ctx.roundRect(cover.x, cover.y, cover.w, cover.h, RADIUS_INNER)
+      ctx.clip()
       try {
-        ctx.drawImage(s.cover, M + 3, y0 + 3, coverSize - 6, coverSize - 6)
+        ctx.drawImage(s.cover, cover.x, cover.y, cover.w, cover.h)
       } catch {
         /* image pas encore décodée */
       }
-      textX = M + coverSize + 28
+      ctx.restore()
+      this.hairline(cover, RADIUS_INNER, c)
     }
-    const textW = W - M - textX
-    const maxLines = this.format === 'square' ? 1 : 2
-    const title = t ? t.title : 'No track'
-    const fit = fitTitle(ctx, title, textW, maxLines)
     ctx.font = `700 ${fit.size}px "Space Grotesk"`
     ctx.fillStyle = t ? c.ink : c.soft
-    let ty = y0 + fit.size * 0.92
+    let ty = titleTop
     for (const line of fit.lines) {
       ctx.fillText(line, textX, ty)
       ty += fit.size * 1.02
@@ -274,83 +335,76 @@ export class Stage {
     ctx.font = 'italic 400 40px "Instrument Serif"'
     ctx.fillStyle = c.soft
     const artist = t ? t.artist || t.albumArtist || '' : 'Pick a track in the bottom bar'
-    ctx.fillText(ellipsize(ctx, artist, textW), textX, ty + 14)
-    const titleBottom = Math.max(y0 + coverSize, ty + 26)
+    ctx.fillText(ellipsize(ctx, artist, textW), textX, artistY)
 
-    // ---- rangée d'infos (bas) ----------------------------------------------
-    const infoH = this.format === 'square' ? 104 : 118
+    // ---- pile du bas, puis la caméra prend ce qui reste ----------------------
+    const infoH = square ? 104 : 118
     const infoY = H - M - infoH
-    // ---- forme d'onde ------------------------------------------------------
-    const waveH = this.format === 'square' ? 130 : 170
-    const waveY = infoY - 28 - waveH
-    this.layout.wave = { x: M, y: waveY, w: W - 2 * M, h: waveH }
-    // ---- caméra ------------------------------------------------------------
-    const camY = titleBottom + 28
-    const camH = Math.max(120, waveY - 28 - camY)
-    this.layout.cam = { x: M, y: camY, w: W - 2 * M, h: camH }
+    const waveH = square ? 150 : 190
+    const waveY = infoY - GUTTER - waveH
+    const camY = headCard.y + headCard.h + GUTTER
+    const camH = Math.max(120, waveY - GUTTER - camY)
+    const waveCard = { x: M, y: waveY, w: cardW, h: waveH }
+    // la zone cliquable pour la recherche est exactement celle des barres
+    this.layout.wave = { x: M + 22, y: waveY + 16, w: cardW - 44, h: waveH - 32 }
+    this.layout.cam = { x: M, y: camY, w: cardW, h: camH }
 
     this.drawCam(s, this.layout.cam, c)
+    this.card(waveCard, c)
     this.drawWave(s, this.layout.wave, c)
-    this.drawInfo(s, { x: M, y: infoY, w: W - 2 * M, h: infoH }, c)
+    this.drawInfo(s, { x: M, y: infoY, w: cardW, h: infoH }, c)
   }
 
   private drawCam(s: StageState, r: Rect, c: ThemeColors): void {
     const ctx = this.ctx
-    ctx.fillStyle = c.ink
-    ctx.fillRect(r.x, r.y, r.w, r.h)
-    const inner = { x: r.x + 4, y: r.y + 4, w: r.w - 8, h: r.h - 8 }
     const v = s.video
     if (v && v.readyState >= 2 && v.videoWidth > 0) {
-      // recadrage « cover » : on remplit le cadre en rognant l'excédent
-      const scale = Math.max(inner.w / v.videoWidth, inner.h / v.videoHeight)
-      const sw = inner.w / scale
-      const sh = inner.h / scale
+      // recadrage « cover » : on remplit la carte en rognant l'excédent
+      const scale = Math.max(r.w / v.videoWidth, r.h / v.videoHeight)
+      const sw = r.w / scale
+      const sh = r.h / scale
       const sx = (v.videoWidth - sw) / 2
       const sy = (v.videoHeight - sh) / 2
       ctx.save()
       ctx.beginPath()
-      ctx.rect(inner.x, inner.y, inner.w, inner.h)
+      ctx.roundRect(r.x, r.y, r.w, r.h, RADIUS)
       ctx.clip()
       if (s.mirror) {
-        ctx.translate(inner.x + inner.w, inner.y)
+        ctx.translate(r.x + r.w, r.y)
         ctx.scale(-1, 1)
-        ctx.drawImage(v, sx, sy, sw, sh, 0, 0, inner.w, inner.h)
+        ctx.drawImage(v, sx, sy, sw, sh, 0, 0, r.w, r.h)
       } else {
-        ctx.drawImage(v, sx, sy, sw, sh, inner.x, inner.y, inner.w, inner.h)
+        ctx.drawImage(v, sx, sy, sw, sh, r.x, r.y, r.w, r.h)
       }
       ctx.restore()
+      this.hairline(r, RADIUS, c)
     } else {
-      ctx.fillStyle = c.paper3
-      ctx.fillRect(inner.x, inner.y, inner.w, inner.h)
+      ctx.beginPath()
+      ctx.roundRect(r.x, r.y, r.w, r.h, RADIUS)
+      ctx.fillStyle = c.well
+      ctx.fill()
+      this.hairline(r, RADIUS, c)
       ctx.font = 'italic 400 44px "Instrument Serif"'
       ctx.fillStyle = c.soft
       ctx.textAlign = 'center'
-      ctx.fillText(v ? 'Camera…' : 'No camera', inner.x + inner.w / 2, inner.y + inner.h / 2 + 14)
+      ctx.fillText(v ? 'Camera…' : 'No camera', r.x + r.w / 2, r.y + r.h / 2 + 14)
       ctx.textAlign = 'left'
     }
   }
 
-  private drawWave(s: StageState, r: Rect, c: ThemeColors): void {
+  /** Barres dans `inner` : la carte qui les porte est peinte par draw(). */
+  private drawWave(s: StageState, inner: Rect, c: ThemeColors): void {
     const ctx = this.ctx
-    ctx.fillStyle = c.ink
-    ctx.fillRect(r.x, r.y, r.w, r.h)
-    const inner = { x: r.x + 2, y: r.y + 2, w: r.w - 4, h: r.h - 4 }
-    ctx.fillStyle = c.paper
-    ctx.fillRect(inner.x, inner.y, inner.w, inner.h)
     const peaks = s.peaks
     if (!peaks) {
-      ctx.strokeStyle = c.soft
-      ctx.setLineDash([3, 6])
-      ctx.lineWidth = 2
+      ctx.fillStyle = c.sep
       ctx.beginPath()
-      ctx.moveTo(inner.x + 12, inner.y + inner.h / 2)
-      ctx.lineTo(inner.x + inner.w - 12, inner.y + inner.h / 2)
-      ctx.stroke()
-      ctx.setLineDash([])
+      ctx.roundRect(inner.x, inner.y + inner.h / 2 - 2, inner.w, 4, 2)
+      ctx.fill()
       if (s.track) {
-        ctx.font = '400 18px "Fragment Mono"'
+        ctx.font = '500 22px "Space Grotesk"'
         ctx.fillStyle = c.soft
-        ctx.fillText('ANALYZING WAVEFORM…', inner.x + 16, inner.y + 30)
+        ctx.fillText('Analyzing waveform…', inner.x, inner.y + 26)
       }
       return
     }
@@ -361,7 +415,9 @@ export class Stage {
     if (px > 0) {
       ctx.drawImage(layers.played, 0, 0, px, inner.h, inner.x, inner.y, px, inner.h)
       ctx.fillStyle = c.accent
-      ctx.fillRect(inner.x + px - 2, inner.y, 4, inner.h)
+      ctx.beginPath()
+      ctx.roundRect(inner.x + px - 2, inner.y, 4, inner.h, 2)
+      ctx.fill()
     }
   }
 
@@ -372,27 +428,21 @@ export class Stage {
     const pending = !!t && !a
     const cells: Array<{ label: string; value: string; sub?: string; hot?: boolean }> = [
       { label: 'BPM', value: a && a.bpm > 0 ? String(Math.round(a.bpm)) : pending ? '…' : '—', hot: true },
-      { label: 'KEY', value: a?.camelot || (pending ? '…' : '—'), sub: a ? keyNameEn(a.keyName) : undefined },
-      { label: 'VERSION', value: s.version || '—' },
-      { label: 'FORMAT', value: t ? fmtQuality(t) : '—' }
+      { label: 'Key', value: a?.camelot || (pending ? '…' : '—'), sub: a ? keyNameEn(a.keyName) : undefined },
+      { label: 'Version', value: s.version || '—' },
+      { label: 'Format', value: t ? fmtQuality(t) : '—' }
     ]
-    // cadre + séparateurs
-    ctx.fillStyle = c.ink
-    ctx.fillRect(r.x, r.y, r.w, r.h)
-    ctx.fillStyle = c.paper
-    ctx.fillRect(r.x + 2, r.y + 2, r.w - 4, r.h - 4)
+    this.card(r, c)
     const n = cells.length
     const cw = r.w / n
-    for (let i = 1; i < n; i++) {
-      ctx.fillStyle = c.ink
-      ctx.fillRect(Math.round(r.x + i * cw) - 1, r.y, 2, r.h)
-    }
+    ctx.fillStyle = c.sep
+    for (let i = 1; i < n; i++) ctx.fillRect(Math.round(r.x + i * cw) - 1, r.y + 22, 1.5, r.h - 44)
     const small = r.h < 110
     for (let i = 0; i < n; i++) {
       const cell = cells[i]
-      const x = r.x + i * cw + 18
-      const maxW = cw - 36
-      ctx.font = `400 ${small ? 15 : 17}px "Fragment Mono"`
+      const x = r.x + i * cw + 26
+      const maxW = cw - 44
+      ctx.font = `500 ${small ? 19 : 21}px "Space Grotesk"`
       ctx.fillStyle = c.soft
       ctx.fillText(cell.label, x, r.y + (small ? 30 : 34))
       let size = small ? 34 : 40
@@ -402,7 +452,7 @@ export class Stage {
         ctx.font = `700 ${size}px "Space Grotesk"`
       }
       const text = ellipsize(ctx, cell.value, maxW)
-      ctx.fillStyle = cell.hot && cell.value !== '—' && cell.value !== '…' ? c.accent : c.ink
+      ctx.fillStyle = cell.hot && cell.value !== '—' && cell.value !== '…' ? c.accentText : c.ink
       const baseline = r.y + r.h - (small ? 22 : 26)
       ctx.fillText(text, x, baseline)
       if (cell.sub) {

@@ -114,7 +114,7 @@ export type ColumnKey =
   | 'artist' | 'albumArtist' | 'album' | 'genre' | 'year'
   | 'quality' | 'duration' | 'addedAt' | 'playCount' | 'lastPlayedAt' | 'rating'
 
-export const DEFAULT_COLUMNS: ColumnKey[] = ['artist', 'album', 'quality', 'duration', 'addedAt', 'playCount']
+export const DEFAULT_COLUMNS: ColumnKey[] = ['artist', 'album', 'quality', 'duration']
 
 export interface Settings {
   volume: number

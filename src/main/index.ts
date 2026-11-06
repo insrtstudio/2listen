@@ -1,4 +1,4 @@
-import { BrowserWindow, app, session, shell } from 'electron'
+import { BrowserWindow, app, nativeTheme, session, shell } from 'electron'
 import { join } from 'node:path'
 import { registerIpc } from './ipc'
 import { registerHandler, registerScheme } from './protocol'
@@ -20,6 +20,10 @@ app.commandLine.appendSwitch('try-supported-channel-layouts')
 // Tests : profil isolé pour ne jamais toucher la bibliothèque réelle.
 if (process.env.TL_USERDATA) app.setPath('userData', process.env.TL_USERDATA)
 
+// Tests : ni fenêtre visible, ni focus, ni son. On peut les lancer pendant une session de travail.
+const E2E = !!process.env.TL_E2E
+if (E2E && process.platform === 'darwin') app.setActivationPolicy('accessory')
+
 registerScheme()
 
 function createWindow(): void {
@@ -30,9 +34,13 @@ function createWindow(): void {
     minHeight: 640,
     show: false,
     title: '2Listen',
-    backgroundColor: '#ece9e2',
+    // macOS Tahoe : vibrancy native derrière la page transparente (seule la barre latérale la
+    // laisse voir, cf. .sidebar dans styles.css), feux tricolores dans la barre latérale.
+    backgroundColor: '#00000000',
+    vibrancy: 'sidebar',
+    visualEffectState: 'followWindow',
     titleBarStyle: 'hiddenInset',
-    trafficLightPosition: { x: 18, y: 19 },
+    trafficLightPosition: { x: 22, y: 22 },
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: false,
@@ -45,7 +53,14 @@ function createWindow(): void {
   })
 
   mainWindow.once('ready-to-show', () => {
-    mainWindow?.show()
+    if (E2E) {
+      mainWindow?.setOpacity(0)
+      mainWindow?.setIgnoreMouseEvents(true)
+      mainWindow?.webContents.setAudioMuted(true)
+      mainWindow?.showInactive()
+    } else {
+      mainWindow?.show()
+    }
     // Debug : TL_E2E=/script.js exécute un scénario de test puis quitte.
     const e2e = process.env.TL_E2E
     if (e2e) {
@@ -112,6 +127,8 @@ app.whenReady().then(async () => {
     cb(['media', 'speaker-selection', 'mediaKeySystem'].includes(permission))
   )
   await initStores()
+  // la vibrancy et les feux suivent le thème de l'app, pas celui du système
+  nativeTheme.themeSource = settings.get().theme
   registerHandler()
   registerIpc(() => mainWindow)
   createWindow()

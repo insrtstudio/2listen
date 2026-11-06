@@ -4,6 +4,7 @@ import { getAnalysis } from '@/lib/analysis'
 import { computeCorrections, preview } from '@/lib/preview'
 import { player } from '@/lib/player'
 import { useStore } from '@/lib/store'
+import Header from './Header'
 import TrackPicker from './TrackPicker'
 import { fmtNote } from '@/lib/notes'
 import { clubAssessment, KNOWLEDGE_SOURCES, proTricks } from '@/lib/knowledge'
@@ -53,7 +54,7 @@ function SpectrumChart({ a, b, aligned }: { a: AnalysisData; b: AnalysisData; al
       const Y = (v: number): number => 8 + ((yMax - v) / (yMax - yMin)) * (chartH - 8)
 
       // grilles de fréquences
-      ctx.font = '8px "Fragment Mono", monospace'
+      ctx.font = '9px "Fragment Mono", monospace'
       ctx.fillStyle = soft
       ctx.strokeStyle = soft
       ctx.globalAlpha = 0.3
@@ -256,6 +257,9 @@ export default function CompareView(): React.ReactNode {
   const [busy, setBusy] = useState<'A' | 'B' | null>(null)
   const [aligned, setAligned] = useState(true)
   const [side, setSide] = useState<'A' | 'B' | 'AC'>('A')
+  const [allMetrics, setAllMetrics] = useState(false)
+  const [showFixes, setShowFixes] = useState(false)
+  const [tab, setTab] = useState('analysis')
 
   const trackA = tracks.find((t) => t.id === settings.compareA) ?? null
   const trackB = tracks.find((t) => t.id === settings.compareB) ?? null
@@ -332,224 +336,166 @@ export default function CompareView(): React.ReactNode {
     const d = va !== undefined && vb !== undefined ? va - vb : undefined
     const hot = d !== undefined && Math.abs(d) >= (unit === 'LU' || unit === 'dB' ? 2 : 1)
     return (
-      <div key={label} style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr 1fr 1fr', gap: 8, padding: '7px 12px', borderBottom: 'var(--line)', alignItems: 'baseline' }}>
-        <span className="mono" style={{ fontSize: 9, letterSpacing: '.08em', color: 'var(--ink-soft)' }}>{label}</span>
-        <span style={{ font: '700 14px var(--grotesk)', color: 'var(--accent)' }}>{va !== undefined ? va.toFixed(1) : '—'}</span>
-        <span style={{ font: '700 14px var(--grotesk)' }}>{vb !== undefined ? vb.toFixed(1) : '—'}</span>
-        <span className="mono" style={{ fontSize: 11, color: hot && goodWhenClose ? 'var(--accent)' : 'var(--ink-soft)' }}>
-          {d !== undefined ? `${d > 0 ? '+' : ''}${d.toFixed(1)} ${unit}` : ''}
-        </span>
+      <div key={label} className="metric">
+        <span className="n ell">{label}</span>
+        <span className="v a">{va !== undefined ? va.toFixed(1) : '—'}</span>
+        <span className="v">{vb !== undefined ? vb.toFixed(1) : '—'}</span>
+        <span className={`d ${hot && goodWhenClose ? 'hot' : ''}`}>{d !== undefined ? `${d > 0 ? '+' : ''}${d.toFixed(1)} ${unit}` : ''}</span>
       </div>
     )
   }
 
   const ready = dataA && dataB
+  const fixCount = corrections
+    ? corrections.eq.length + (corrections.rumbleHpHz ? 1 : 0) + (corrections.stereo?.labels.length ?? 0) + (corrections.comp ? 1 : 0)
+    : 0
+
+  // les conseils : un onglet par famille, seules celles qui ont quelque chose à dire
+  const tabs = ready
+    ? [
+        { key: 'analysis', label: 'Analyse', items: verdicts(dataA, dataB) },
+        { key: 'club', label: 'Repères club', items: clubAssessment(dataA), note: KNOWLEDGE_SOURCES },
+        { key: 'tricks', label: 'Tricks des masters', items: proTricks(dataA, dataB) },
+        { key: 'stereo', label: 'Stéréo', items: stereoTips(dataA, dataB) }
+      ].filter((x) => x.items.length > 0)
+    : []
+  const current = tabs.find((x) => x.key === tab) ?? tabs[0]
 
   return (
     <>
-      <div style={{ padding: '18px 18px 14px', borderBottom: 'var(--line-thick)', flex: 'none' }}>
-        <div className="mono" style={{ fontSize: 9, letterSpacing: '.14em', color: 'var(--accent)' }}>OUTILS — MIX & MASTER</div>
-        <h1 style={{ margin: '2px 0 0', font: '700 34px/1 var(--grotesk)', letterSpacing: '-0.02em' }}>
-          Comparer <span className="serif" style={{ fontStyle: 'italic', fontWeight: 400 }}>A/B</span>
-        </h1>
-      </div>
+      <Header
+        title="Comparer A/B"
+        sub={busy ? <span className="pulse">Analyse de {busy}…</span> : undefined}
+      />
 
-      <div style={{ flex: 1, overflowY: 'auto', minHeight: 0, padding: 18, display: 'flex', flexDirection: 'column', gap: 14 }}>
-        {/* sélection */}
-        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-          <TrackPicker label="A" color="var(--accent)" trackId={settings.compareA} onPick={(id) => patchSettings({ compareA: id })} />
-          <TrackPicker label="B" color="var(--paper-3, #dbd7cc)" trackId={settings.compareB} onPick={(id) => patchSettings({ compareB: id })} />
+      <div className="pane-scroll">
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', flex: 'none', position: 'relative', zIndex: 3 }}>
+          <TrackPicker label="A" accent placeholder="Votre mix…" trackId={settings.compareA} onPick={(id) => patchSettings({ compareA: id })} />
+          <TrackPicker label="B" placeholder="Le morceau de référence…" trackId={settings.compareB} onPick={(id) => patchSettings({ compareB: id })} />
         </div>
 
-        {busy && (
-          <div className="mono" style={{ fontSize: 10, color: 'var(--accent)', animation: 'blink 1s steps(1) infinite' }}>
-            ANALYSE {busy} EN COURS — LUFS, SPECTRE, DYNAMIQUE…
-          </div>
-        )}
-
         {!trackA || !trackB ? (
-          <div className="serif" style={{ fontStyle: 'italic', fontSize: 19, color: 'var(--ink-soft)', textAlign: 'center', padding: '40px 0' }}>
-            Choisissez votre mix (A) et un morceau de référence (B) —<br />
-            clic droit sur une piste → « A/B » pour aller plus vite.
+          <div className="card page" style={{ display: 'grid', placeItems: 'center' }}>
+            <div className="empty">
+              Choisissez votre mix et un morceau de référence,<br />ou glissez-les depuis la liste.
+            </div>
           </div>
         ) : ready ? (
           <>
-            {/* écoute A/B */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-              <span className="mono" style={{ fontSize: 9, letterSpacing: '.1em', color: 'var(--ink-soft)' }}>ÉCOUTE</span>
-              <div style={{ display: 'flex' }}>
+            <div className="card" style={{ flex: 'none', padding: '8px 14px', display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
+              <div className="seg acc">
+                <button className={side === 'A' ? 'on' : ''} onClick={() => listen('A')}>A</button>
                 <button
-                  className="tap"
-                  onClick={() => listen('A')}
-                  style={{
-                    width: 56, height: 36, border: '2px solid var(--ink)', font: '700 15px var(--grotesk)',
-                    background: side === 'A' ? 'var(--accent)' : 'transparent', color: side === 'A' ? '#111' : 'inherit'
-                  }}
-                >
-                  A
-                </button>
-                <button
-                  className="tap"
+                  className={side === 'AC' ? 'on' : ''}
                   onClick={() => listen('AC')}
                   title="A avec les corrections appliquées (EQ + compression)"
                   disabled={!corrections || (corrections.eq.length === 0 && !corrections.comp)}
-                  style={{
-                    width: 92, height: 36, border: '2px solid var(--ink)', marginLeft: -2, font: '700 12px var(--grotesk)',
-                    background: side === 'AC' ? 'var(--accent)' : 'transparent', color: side === 'AC' ? '#111' : 'inherit'
-                  }}
                 >
-                  A corrigé ✦
+                  A corrigé
                 </button>
-                <button
-                  className="tap"
-                  onClick={() => listen('B')}
-                  style={{
-                    width: 56, height: 36, border: '2px solid var(--ink)', marginLeft: -2, font: '700 15px var(--grotesk)',
-                    background: side === 'B' ? 'var(--ink)' : 'transparent', color: side === 'B' ? 'var(--paper)' : 'inherit'
-                  }}
-                >
-                  B
-                </button>
+                <button className={side === 'B' ? 'on' : ''} onClick={() => listen('B')}>B</button>
               </div>
-              <label className="mono tap" style={{ fontSize: 9, letterSpacing: '.08em', display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer', color: aligned ? 'var(--accent)' : 'var(--ink-soft)' }}>
-                <input type="checkbox" checked={aligned} onChange={(e) => setAligned(e.target.checked)} style={{ accentColor: '#ff4d00' }} />
-                LOUDNESS ALIGNÉE
+              <label className="switch" title="La bascule garde la position. Écoute au même niveau, pour comparer sans le biais du « plus fort = mieux ».">
+                <input type="checkbox" checked={aligned} onChange={(e) => setAligned(e.target.checked)} />
+                Loudness alignée
               </label>
-              <span className="mono" style={{ fontSize: 9, color: 'var(--ink-soft)' }}>
-                la bascule garde la position — comparez sans le biais du « plus fort = mieux »
-              </span>
+              <div className="grow" />
+              {fixCount > 0 ? (
+                <button className={`blk sm ${showFixes ? 'on' : ''}`} onClick={() => setShowFixes((v) => !v)}>
+                  {fixCount} correction{fixCount > 1 ? 's' : ''} proposée{fixCount > 1 ? 's' : ''}
+                </button>
+              ) : (
+                <span className="dim" style={{ fontSize: 12 }}>Aucune correction nécessaire</span>
+              )}
+              {showFixes && corrections && fixCount > 0 && (
+                <div className="chips" style={{ flexBasis: '100%' }}>
+                  {corrections.eq.map((m, i) => (
+                    <span key={`${m.freq}-${i}`} className={`badge ${side === 'AC' ? 'hot' : ''}`}>
+                      {m.type === 'lowshelf' ? 'Shelf bas' : m.type === 'highshelf' ? 'Shelf haut' : 'EQ'} {m.gainDb > 0 ? '+' : ''}
+                      {m.gainDb} dB à {m.freq >= 1000 ? `${(m.freq / 1000).toFixed(m.freq < 10000 ? 2 : 1)}k` : m.freq} Hz
+                      {fmtNote(m.freq) ? ` (${fmtNote(m.freq)})` : ''}
+                      {m.type === 'peaking' ? ` · Q ${m.q}` : ''}
+                    </span>
+                  ))}
+                  {corrections.rumbleHpHz && <span className={`badge ${side === 'AC' ? 'hot' : ''}`}>Coupe-bas {corrections.rumbleHpHz} Hz</span>}
+                  {corrections.stereo?.labels.map((l) => <span key={l} className={`badge ${side === 'AC' ? 'hot' : ''}`}>Stéréo {l}</span>)}
+                  {corrections.comp && (
+                    <span className={`badge ${side === 'AC' ? 'hot' : ''}`}>
+                      Comp {corrections.comp.ratio}:1 à {corrections.comp.thresholdDb} dB · gain {corrections.comp.makeupDb > 0 ? '+' : ''}{corrections.comp.makeupDb} dB
+                    </span>
+                  )}
+                </div>
+              )}
             </div>
 
-            {corrections && (
-              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
-                <span className="mono" style={{ fontSize: 8, letterSpacing: '.12em', color: 'var(--ink-soft)' }}>
-                  CORRECTIONS « A CORRIGÉ ✦ » :
-                </span>
-                {corrections.eq.map((m, i) => (
-                  <span key={`${m.freq}-${i}`} className="badge" style={{ color: side === 'AC' ? 'var(--accent)' : undefined }}>
-                    {m.type === 'lowshelf' ? 'SHELF↓' : m.type === 'highshelf' ? 'SHELF↑' : 'EQ'} {m.gainDb > 0 ? '+' : ''}
-                    {m.gainDb} dB @ {m.freq >= 1000 ? `${(m.freq / 1000).toFixed(m.freq < 10000 ? 2 : 1)}k` : m.freq} Hz
-                    {fmtNote(m.freq) ? ` (${fmtNote(m.freq)})` : ''}
-                    {m.type === 'peaking' ? ` · Q ${m.q}` : ''}
-                  </span>
-                ))}
-                {corrections.rumbleHpHz && (
-                  <span className="badge" style={{ color: side === 'AC' ? 'var(--accent)' : undefined }}>
-                    HP anti-rumble {corrections.rumbleHpHz} Hz
-                  </span>
-                )}
-                {corrections.stereo?.labels.map((l) => (
-                  <span key={l} className="badge" style={{ color: side === 'AC' ? 'var(--accent)' : undefined }}>
-                    STÉRÉO {l}
-                  </span>
-                ))}
-                {corrections.comp && (
-                  <span className="badge" style={{ color: side === 'AC' ? 'var(--accent)' : undefined }}>
-                    COMP {corrections.comp.ratio}:1 @ {corrections.comp.thresholdDb} dB · make-up {corrections.comp.makeupDb > 0 ? '+' : ''}{corrections.comp.makeupDb} dB
-                  </span>
-                )}
-                {corrections.eq.length === 0 && !corrections.comp && !corrections.stereo && !corrections.rumbleHpHz && (
-                  <span className="mono" style={{ fontSize: 9, color: 'var(--ink-soft)' }}>aucune correction nécessaire — le mix colle déjà à la référence</span>
-                )}
-              </div>
-            )}
-
-            {/* spectre + métriques */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(340px, 1.5fr) minmax(280px, 1fr)', gap: 14, alignItems: 'stretch' }}>
-              <div style={{ border: 'var(--line)', display: 'flex', flexDirection: 'column', minHeight: 300 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 12px', borderBottom: 'var(--line)' }}>
-                  <span className="mono" style={{ fontSize: 9, letterSpacing: '.1em', color: 'var(--ink-soft)' }}>SPECTRE MOYEN (dB / Hz)</span>
-                  <span className="mono" style={{ fontSize: 9, display: 'flex', gap: 10 }}>
-                    <span style={{ color: 'var(--accent)' }}>— A (mix)</span>
-                    <span>— B (réf)</span>
+            <div style={{ flex: 'none', display: 'grid', gridTemplateColumns: 'minmax(320px, 1fr) 330px', gap: 8, alignItems: 'stretch' }}>
+              <div className="card" style={{ display: 'flex', flexDirection: 'column', minHeight: 300, overflow: 'hidden' }}>
+                <div className="phead">
+                  <span className="label grow">Spectre moyen</span>
+                  <span className="mono" style={{ fontSize: 10, display: 'flex', gap: 10 }}>
+                    <span style={{ color: 'var(--accent-2)' }}>— A</span>
+                    <span>— B</span>
                   </span>
                 </div>
-                <div style={{ flex: 1, padding: 6 }}>
+                <div style={{ flex: 1, padding: 6, display: 'flex', minHeight: 0 }}>
                   <SpectrumChart a={dataA} b={dataB} aligned={aligned} />
                 </div>
               </div>
 
-              <div style={{ border: 'var(--line)' }}>
-                <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr 1fr 1fr', gap: 8, padding: '8px 12px', borderBottom: 'var(--line-thick)' }}>
-                  <span className="mono" style={{ fontSize: 9, letterSpacing: '.1em', color: 'var(--ink-soft)' }}>MÉTRIQUE</span>
-                  <span className="mono" style={{ fontSize: 9, color: 'var(--accent)' }}>A</span>
-                  <span className="mono" style={{ fontSize: 9 }}>B</span>
-                  <span className="mono" style={{ fontSize: 9, color: 'var(--ink-soft)' }}>Δ</span>
+              <div className="card" style={{ overflow: 'hidden' }}>
+                <div className="phead" style={{ display: 'grid', gridTemplateColumns: '1fr 58px 58px 62px' }}>
+                  <span className="label">Mesures</span>
+                  <span className="label" style={{ textAlign: 'right', color: 'var(--accent-2)' }}>A</span>
+                  <span className="label" style={{ textAlign: 'right' }}>B</span>
+                  <span className="label" style={{ textAlign: 'right' }}>Écart</span>
                 </div>
-                {metric('LUFS INTÉGRÉ', 'LU', dataA.lufsI, dataB.lufsI)}
-                {metric('LUFS COURT TERME MAX', 'LU', dataA.lufsSMax, dataB.lufsSMax)}
-                {metric('LRA (PLAGE)', 'LU', dataA.lra, dataB.lra)}
-                {metric('PEAK ÉCHANTILLON', 'dB', dataA.peakDb, dataB.peakDb)}
-                {metric('TRUE PEAK ≈', 'dB', dataA.truePeakDb, dataB.truePeakDb)}
-                {metric('RMS', 'dB', dataA.rmsDb, dataB.rmsDb)}
-                {metric('FACTEUR DE CRÊTE', 'dB', dataA.crestDb, dataB.crestDb)}
-                {metric('PLR', 'dB', dataA.plr, dataB.plr)}
-                {metric('LARGEUR GRAVES (S/M)', 'dB', dataA.widthLowDb, dataB.widthLowDb)}
-                {metric('LARGEUR MÉDIUMS', 'dB', dataA.widthMidDb, dataB.widthMidDb)}
-                {metric('LARGEUR AIGUS', 'dB', dataA.widthHighDb, dataB.widthHighDb)}
-                {metric('CORRÉLATION L/R', '', dataA.corr, dataB.corr, false)}
-                {metric('BALANCE L/R', 'dB', dataA.balanceDb, dataB.balanceDb)}
+                {metric('LUFS intégré', 'LU', dataA.lufsI, dataB.lufsI)}
+                {metric('True peak', 'dB', dataA.truePeakDb, dataB.truePeakDb)}
+                {metric('Plage (LRA)', 'LU', dataA.lra, dataB.lra)}
+                {metric('Facteur de crête', 'dB', dataA.crestDb, dataB.crestDb)}
+                {metric('Corrélation L/R', '', dataA.corr, dataB.corr, false)}
                 {metric('BPM', 'BPM', dataA.bpm || undefined, dataB.bpm || undefined, false)}
-                <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr 1fr 1fr', gap: 8, padding: '7px 12px', alignItems: 'baseline' }}>
-                  <span className="mono" style={{ fontSize: 9, letterSpacing: '.08em', color: 'var(--ink-soft)' }}>TONALITÉ</span>
-                  <span style={{ font: '700 13px var(--grotesk)', color: 'var(--accent)' }} title={dataA.keyName}>{dataA.camelot}</span>
-                  <span style={{ font: '700 13px var(--grotesk)' }} title={dataB.keyName}>{dataB.camelot}</span>
+                <div className="metric">
+                  <span className="n">Tonalité</span>
+                  <span className="v a" title={dataA.keyName}>{dataA.camelot}</span>
+                  <span className="v" title={dataB.keyName}>{dataB.camelot}</span>
                   <span />
                 </div>
+                {allMetrics && (
+                  <>
+                    {metric('LUFS court terme max', 'LU', dataA.lufsSMax, dataB.lufsSMax)}
+                    {metric('Peak échantillon', 'dB', dataA.peakDb, dataB.peakDb)}
+                    {metric('RMS', 'dB', dataA.rmsDb, dataB.rmsDb)}
+                    {metric('PLR', 'dB', dataA.plr, dataB.plr)}
+                    {metric('Largeur graves (S/M)', 'dB', dataA.widthLowDb, dataB.widthLowDb)}
+                    {metric('Largeur médiums', 'dB', dataA.widthMidDb, dataB.widthMidDb)}
+                    {metric('Largeur aigus', 'dB', dataA.widthHighDb, dataB.widthHighDb)}
+                    {metric('Balance L/R', 'dB', dataA.balanceDb, dataB.balanceDb)}
+                  </>
+                )}
+                <div style={{ padding: '8px 14px', borderTop: 'var(--line)' }}>
+                  <button className="blk sm" onClick={() => setAllMetrics((v) => !v)}>
+                    {allMetrics ? 'Moins de mesures' : 'Toutes les mesures'}
+                  </button>
+                </div>
               </div>
             </div>
 
-            {/* verdicts */}
-            <div style={{ border: 'var(--line)', background: 'var(--paper-2)' }}>
-              <div className="mono" style={{ fontSize: 9, letterSpacing: '.1em', color: 'var(--accent)', padding: '8px 12px 2px' }}>
-                LECTURE DE L'ANALYSE
-              </div>
-              <ul style={{ margin: 0, padding: '6px 12px 10px 28px' }}>
-                {verdicts(dataA, dataB).map((v, i) => (
-                  <li key={i} style={{ font: '500 13px/1.7 var(--grotesk)' }}>{v}</li>
-                ))}
-              </ul>
-            </div>
-
-            {clubAssessment(dataA).length > 0 && (
-              <div style={{ border: 'var(--line)' }}>
-                <div className="mono" style={{ fontSize: 9, letterSpacing: '.1em', color: 'var(--accent)', padding: '8px 12px 2px' }}>
-                  REPÈRES CLUB — VOTRE MIX (A) FACE AUX STANDARDS ÉLECTRO
+            {current && (
+              <div className="card" style={{ flex: 'none' }}>
+                <div className="phead" style={{ minHeight: 42 }}>
+                  <div className="seg">
+                    {tabs.map((x) => (
+                      <button key={x.key} className={current.key === x.key ? 'on' : ''} onClick={() => setTab(x.key)}>
+                        {x.label} <span className="n">{x.items.length}</span>
+                      </button>
+                    ))}
+                  </div>
                 </div>
-                <ul style={{ margin: 0, padding: '6px 12px 6px 28px' }}>
-                  {clubAssessment(dataA).map((v, i) => (
-                    <li key={i} style={{ font: '500 13px/1.7 var(--grotesk)' }}>{v}</li>
-                  ))}
+                <ul className="advice">
+                  {current.items.map((v, i) => <li key={i}>{v}</li>)}
                 </ul>
-                <div className="mono" style={{ fontSize: 8, color: 'var(--ink-soft)', padding: '0 12px 8px', letterSpacing: '.03em' }}>
-                  {KNOWLEDGE_SOURCES}
-                </div>
-              </div>
-            )}
-
-            {proTricks(dataA, dataB).length > 0 && (
-              <div style={{ border: 'var(--line)' }}>
-                <div className="mono" style={{ fontSize: 9, letterSpacing: '.1em', color: 'var(--accent)', padding: '8px 12px 2px' }}>
-                  TRICKS DES MASTERS — DÉCLENCHÉS PAR VOS MESURES
-                </div>
-                <ul style={{ margin: 0, padding: '6px 12px 10px 28px' }}>
-                  {proTricks(dataA, dataB).map((v, i) => (
-                    <li key={i} style={{ font: '500 13px/1.7 var(--grotesk)' }}>{v}</li>
-                  ))}
-                </ul>
-              </div>
-            )}
-
-            {stereoTips(dataA, dataB).length > 0 && (
-              <div style={{ border: 'var(--line)' }}>
-                <div className="mono" style={{ fontSize: 9, letterSpacing: '.1em', color: 'var(--accent)', padding: '8px 12px 2px' }}>
-                  CONSEILS STÉRÉO — SPREAD & PANNING
-                </div>
-                <ul style={{ margin: 0, padding: '6px 12px 10px 28px' }}>
-                  {stereoTips(dataA, dataB).map((v, i) => (
-                    <li key={i} style={{ font: '500 13px/1.7 var(--grotesk)' }}>{v}</li>
-                  ))}
-                </ul>
+                {current.note && <div className="dim" style={{ fontSize: 11, padding: '0 14px 12px' }}>{current.note}</div>}
               </div>
             )}
           </>

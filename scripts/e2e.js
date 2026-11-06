@@ -74,7 +74,8 @@ await assert(`[...document.querySelectorAll('.navitem')].some((e) => e.textConte
 // — 6. ajout d'une 2e piste puis vue playlist —
 await js(`document.querySelectorAll('.trow')[1].dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 400, clientY: 330 }))`)
 await sleep(250)
-await clickText('.ctxmenu button', 'Nouvelle playlist')
+// la playlist existante, après l'action « Nouvelle playlist » du sous-menu
+await clickText('.ctxmenu .submenu button:last-child', 'Nouvelle playlist')
 await sleep(250)
 await clickText('.navitem', 'Nouvelle playlist')
 await sleep(400)
@@ -94,11 +95,30 @@ await sleep(400)
 await shot('09-artistes')
 
 // — 8. clavier : flèche + espace (pause) —
-await clickText('.navitem', 'Pistes')
+await clickText('.navitem', 'Morceaux')
 await sleep(400)
 await js(`window.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true }))`)
 await sleep(300)
 await assert(`window.__tl_probe().playing === false`, 'espace met en pause')
 
-// — 9. état persisté : la playlist doit être dans library.json —
+// — 9. réglages : au-dessus de tout, thème appliqué —
+await clickText('.navitem', 'Réglages')
+await sleep(300)
+await assert(`(() => { const r = document.querySelector('.modal').getBoundingClientRect(); return document.elementFromPoint(r.left + 40, r.top + 20).closest('.modal') !== null })()`, 'réglages visibles au premier plan')
+await clickText('.modal .seg button', 'Sombre')
+await sleep(200)
+await assert(`document.documentElement.dataset.theme === 'dark'`, 'thème sombre appliqué')
+await js(`window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))`)
+await sleep(200)
+await assert(`!document.querySelector('.modal')`, 'Échap ferme les réglages')
+
+// — 10. ⌘F depuis une vue sans recherche : retour aux morceaux, champ focalisé —
+await clickText('.navitem', 'Table de mix')
+await sleep(300)
+await assert(`!document.querySelector('.search input')`, 'pas de recherche sur la table de mix')
+await js(`window.dispatchEvent(new KeyboardEvent('keydown', { key: 'f', metaKey: true }))`)
+await sleep(200)
+await assert(`document.activeElement === document.querySelector('.search input')`, '⌘F focalise la recherche')
+
+// — 11. état persisté : la playlist doit être dans library.json —
 console.log('[e2e] terminé')
