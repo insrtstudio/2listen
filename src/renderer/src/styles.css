@@ -138,8 +138,8 @@ input, select, textarea { font-family: inherit; color: inherit; user-select: tex
 }
 /* zone des feux tricolores (trafficLightPosition 22 × 22) */
 .sidebar-titlebar { flex: none; height: 44px; display: flex; align-items: center; padding: 0 12px 0 84px; }
-.brand { font: 700 17px/1 var(--grotesk); letter-spacing: -0.02em; white-space: nowrap; }
-.brand span { color: var(--accent); }
+.brand { display: inline-flex; align-items: center; gap: 7px; font: 700 15px/1 var(--grotesk); letter-spacing: -0.02em; white-space: nowrap; }
+.appmark { flex: none; display: block; }
 .sidebar nav { flex: 1; min-height: 0; overflow-y: auto; padding-bottom: 8px; }
 .sidebar-foot { flex: none; border-top: var(--line); padding: 8px; display: flex; flex-direction: column; gap: 6px; }
 

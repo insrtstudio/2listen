@@ -1,6 +1,7 @@
 import type { AnalysisData, Peaks, Track } from '@shared/types'
 import { fmtDuration, fmtQuality } from './format'
 import { drawWaveBars, type WaveColors } from './wavedraw'
+import { MARK_BARS } from './mark'
 
 /**
  * Scène du mode streamer : une publication Instagram rendue sur un canvas
@@ -245,6 +246,26 @@ export class Stage {
     ctx.stroke()
   }
 
+  private drawMark(x: number, y: number, size: number, c: ThemeColors): void {
+    const ctx = this.ctx
+    const u = size / 824
+    ctx.beginPath()
+    ctx.roundRect(x, y, size, size, 186 * u)
+    ctx.fillStyle = '#0d0d0e'
+    ctx.fill()
+    this.hairline({ x, y, w: size, h: size }, 186 * u, c)
+    ctx.fillStyle = '#d5dae2'
+    for (const [bx, by, bh] of MARK_BARS) {
+      ctx.beginPath()
+      ctx.roundRect(x + (bx - 100) * u, y + (by - 100) * u, 84 * u, bh * u, 42 * u)
+      ctx.fill()
+    }
+    ctx.fillStyle = '#ff5a1f'
+    ctx.beginPath()
+    ctx.arc(x + 690 * u, y + 644 * u, 52 * u, 0, Math.PI * 2)
+    ctx.fill()
+  }
+
   draw(s: StageState): void {
     const ctx = this.ctx
     const { w: W, h: H } = FORMATS[this.format]
@@ -283,9 +304,14 @@ export class Stage {
 
     ctx.font = '700 24px "Space Grotesk"'
     ctx.textAlign = 'left'
+    // logo : même dessin que l'icône de l'app (AppMark)
+    const mark = 32
+    const markX = M + P
+    const markY = headY - 26
+    this.drawMark(markX, markY, mark, c)
     ctx.fillStyle = c.ink
-    ctx.fillText('2Listen', M + P, headY)
-    const brandW = ctx.measureText('2Listen').width
+    ctx.fillText('2Listen', markX + mark + 10, headY)
+    const brandW = mark + 10 + ctx.measureText('2Listen').width
     ctx.font = '500 24px "Space Grotesk"'
     ctx.fillStyle = c.soft
     ctx.fillText('Now playing', M + P + brandW + 14, headY)

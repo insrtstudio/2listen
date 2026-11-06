@@ -1,8 +1,11 @@
 /**
- * Génère build/icon.icns sans aucune dépendance : on dessine l'icône pixel par
- * pixel (carré crème, bord encre, forme d'onde orange — l'ADN 2Listen), on
- * encode le PNG à la main (zlib + CRC), puis sips/iconutil (macOS) fabriquent
- * l'iconset.
+ * Génère build/icon.icns sans aucune dépendance. L'icône suit la direction
+ * artistique Insrt, celle de PiersCRM (le back office, l'app mère) : plaque
+ * encre, signe chromé, un seul point sunset. Le signe de 2Listen est une onde
+ * sonore. Plaque, dégradés et point reprennent les valeurs mesurées sur
+ * src-tauri/icons/icon.icns du CRM. On calcule chaque pixel, sur-échantillonné
+ * 4×4, on encode le PNG à la main (zlib + CRC), puis sips/iconutil (macOS)
+ * fabriquent l'iconset. AppMark (Icon.tsx) en est la version petite taille.
  */
 import { deflateSync } from 'node:zlib'
 import { execSync } from 'node:child_process'
@@ -11,58 +14,63 @@ import { mkdirSync, writeFileSync, rmSync } from 'node:fs'
 const S = 1024
 const px = new Uint8Array(S * S * 4) // RGBA, transparent par défaut
 
-const CREAM = [0xec, 0xe9, 0xe2, 255]
-const INK = [0x11, 0x11, 0x11, 255]
-const ORANGE = [0xff, 0x4d, 0x00, 255]
+const hex = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16))
+const ramp = (stops, y) => {
+  if (y <= stops[0][0]) return hex(stops[0][1])
+  for (let i = 1; i < stops.length; i++) {
+    if (y <= stops[i][0]) {
+      const k = (y - stops[i - 1][0]) / (stops[i][0] - stops[i - 1][0])
+      const a = hex(stops[i - 1][1]), b = hex(stops[i][1])
+      return a.map((v, c) => v + (b[c] - v) * k)
+    }
+  }
+  return hex(stops[stops.length - 1][1])
+}
+const INK = [[100, '#171719'], [300, '#111112'], [500, '#0d0d0e'], [700, '#0b0b0b'], [800, '#100c0b'], [860, '#150e0b'], [924, '#1c110c']]
+const CHROME = [[230, '#ffffff'], [270, '#f8fafc'], [430, '#e7ebf1'], [590, '#9aa4b0'], [710, '#e0e5eb'], [780, '#edf0f5']]
+const SUNSET = hex('#ff5a1f')
+const EDGE = [0x35, 0x35, 0x35]
 
-const put = (x, y, c) => {
-  if (x < 0 || y < 0 || x >= S || y >= S) return
-  const i = (y * S + x) * 4
-  px[i] = c[0]; px[i + 1] = c[1]; px[i + 2] = c[2]; px[i + 3] = c[3]
+// distance signée à un rectangle arrondi (négative dedans)
+const sdRound = (x, y, x0, y0, x1, y1, r) => {
+  const qx = Math.abs(x - (x0 + x1) / 2) - (x1 - x0) / 2 + r
+  const qy = Math.abs(y - (y0 + y1) / 2) - (y1 - y0) / 2 + r
+  return Math.hypot(Math.max(qx, 0), Math.max(qy, 0)) + Math.min(Math.max(qx, qy), 0) - r
 }
 
-const rect = (x0, y0, x1, y1, c) => {
-  for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) put(x, y, c)
-}
-
-// — plaque : carré aux coins arrondis (marge macOS ~10 %) —
-const M = 100, R = 180, B = 34 // marge, rayon, bordure
-const inside = (x, y) => {
-  const x0 = M, y0 = M, x1 = S - M, y1 = S - M
-  if (x < x0 || x >= x1 || y < y0 || y >= y1) return false
-  const cx = Math.max(x0 + R, Math.min(x1 - R, x + 0.5))
-  const cy = Math.max(y0 + R, Math.min(y1 - R, y + 0.5))
-  const dx = x + 0.5 - cx, dy = y + 0.5 - cy
-  return dx * dx + dy * dy <= R * R
-}
-const insideInner = (x, y) => {
-  const x0 = M + B, y0 = M + B, x1 = S - M - B, y1 = S - M - B
-  const r = R - B
-  if (x < x0 || x >= x1 || y < y0 || y >= y1) return false
-  const cx = Math.max(x0 + r, Math.min(x1 - r, x + 0.5))
-  const cy = Math.max(y0 + r, Math.min(y1 - r, y + 0.5))
-  const dx = x + 0.5 - cx, dy = y + 0.5 - cy
-  return dx * dx + dy * dy <= r * r
-}
-for (let y = 0; y < S; y++)
-  for (let x = 0; x < S; x++)
-    if (inside(x, y)) put(x, y, insideInner(x, y) ? CREAM : INK)
-
-// — forme d'onde : barres orange symétriques, silhouette organique —
-const mid = S / 2
-const bars = 23, bw = 22, gap = 8
-const total = bars * bw + (bars - 1) * gap
-const startX = Math.round((S - total) / 2)
-// hauteurs façon morceau : intro, montée, drop, outro
-const hs = [0.18, 0.30, 0.24, 0.46, 0.38, 0.62, 0.52, 0.78, 0.66, 0.92, 0.84, 1.0, 0.84, 0.92, 0.66, 0.78, 0.52, 0.62, 0.38, 0.46, 0.24, 0.30, 0.18]
-const maxH = 300
-hs.forEach((h, i) => {
-  const x0 = startX + i * (bw + gap)
-  const hh = Math.round(h * maxH)
-  rect(x0, Math.round(mid - hh), x0 + bw, Math.round(mid + hh), i === 11 ? INK : ORANGE)
+// — l'onde : neuf capsules chromées, silhouette de morceau —
+const BAR = 40, GAP = 20, FIRST = 232, MID = 490, MAX = 530
+const HEIGHTS = [0.22, 0.46, 0.34, 0.72, 1.0, 0.62, 0.84, 0.4, 0.24]
+const bars = HEIGHTS.map((h, i) => {
+  const x0 = FIRST + i * (BAR + GAP)
+  return [x0, MID - (h * MAX) / 2, x0 + BAR, MID + (h * MAX) / 2]
 })
-// ligne médiane encre
-rect(M + B + 40, mid - 4, S - M - B - 40, mid + 4, INK)
+
+const sample = (x, y) => {
+  const d = sdRound(x, y, 100, 100, 924, 924, 186)
+  if (d > 0) return null
+  if (Math.hypot(x - 768, y - 724) <= 32) return SUNSET
+  for (const [x0, y0, x1, y1] of bars) {
+    if (x >= x0 && x <= x1 && sdRound(x, y, x0, y0, x1, y1, BAR / 2) <= 0) return ramp(CHROME, y)
+  }
+  return d > -3 ? EDGE : ramp(INK, y)
+}
+
+for (let y = 0; y < S; y++) {
+  for (let x = 0; x < S; x++) {
+    let n = 0, r = 0, g = 0, b = 0
+    for (let j = 0; j < 4; j++) {
+      for (let i = 0; i < 4; i++) {
+        const c = sample(x + (i + 0.5) / 4, y + (j + 0.5) / 4)
+        if (c) { n++; r += c[0]; g += c[1]; b += c[2] }
+      }
+    }
+    if (!n) continue
+    const k = (y * S + x) * 4
+    px[k] = Math.round(r / n); px[k + 1] = Math.round(g / n); px[k + 2] = Math.round(b / n)
+    px[k + 3] = Math.round((n / 16) * 255)
+  }
+}
 
 // — encodage PNG minimal —
 const crcTable = Array.from({ length: 256 }, (_, n) => {

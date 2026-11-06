@@ -1,3 +1,4 @@
+import { MARK_BARS } from '@/lib/mark'
 // Icônes trait fin arrondi (façon SF Symbols / macOS Tahoe), même dessin que 2Edit.
 const P: Record<string, React.ReactNode> = {
   play: <path d="M5.5 3.2l11 6.8-11 6.8z" fill="currentColor" />,
@@ -114,6 +115,29 @@ export default function Icon({ name, size }: { name: string; size?: number }): R
       aria-hidden
     >
       {P[name]}
+    </svg>
+  )
+}
+
+/**
+ * Logo de l'app : l'icône (scripts/make-icon.mjs) redessinée pour les petites
+ * tailles, avec cinq capsules au lieu de neuf. Direction Insrt, comme PiersCRM.
+ */
+export function AppMark({ size = 20 }: { size?: number }): JSX.Element {
+  return (
+    <svg className="appmark" width={size} height={size} viewBox="100 100 824 824" aria-hidden="true">
+      <defs>
+        <linearGradient id="appmark-chrome" gradientUnits="userSpaceOnUse" x1="0" y1="225" x2="0" y2="755">
+          <stop offset="0" stopColor="#ffffff" />
+          <stop offset="0.65" stopColor="#a8b0bb" />
+          <stop offset="1" stopColor="#edf0f5" />
+        </linearGradient>
+      </defs>
+      <rect x="100" y="100" width="824" height="824" rx="186" fill="#0d0d0e" stroke="#353535" strokeWidth="12" />
+      {MARK_BARS.map(([x, y, h]) => (
+        <rect key={x} x={x} y={y} width="84" height={h} rx="42" fill="url(#appmark-chrome)" />
+      ))}
+      <circle cx="790" cy="744" r="52" fill="#ff5a1f" />
     </svg>
   )
 }

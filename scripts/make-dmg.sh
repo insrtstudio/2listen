@@ -63,7 +63,12 @@ tell application "Finder"
 end tell
 APPLESCRIPT
 sync
-retry hdiutil detach -quiet "/Volumes/${VOL}" || hdiutil detach -force "/Volumes/${VOL}"
+# hdiutil peut signaler une erreur alors que le volume est bien démonté : seul
+# compte le fait qu'il ait disparu.
+detach() {
+  [ ! -d "/Volumes/${VOL}" ] || hdiutil detach -quiet "/Volumes/${VOL}"
+}
+retry detach || hdiutil detach -force "/Volumes/${VOL}"
 
 rm -f "${OUT}"
 retry hdiutil convert -quiet -format UDZO -imagekey zlib-level=9 -o "${OUT}" "${RW}"

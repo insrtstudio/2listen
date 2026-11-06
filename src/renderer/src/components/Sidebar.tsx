@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useStore } from '@/lib/store'
-import Icon from './Icon'
+import Icon, { AppMark } from './Icon'
 import SettingsSheet from './SettingsSheet'
 
 export default function Sidebar(): React.ReactNode {
@@ -34,7 +34,7 @@ export default function Sidebar(): React.ReactNode {
   return (
     <aside className="sidebar">
       <div className="sidebar-titlebar drag">
-        <span className="brand">2<span>Listen</span></span>
+        <span className="brand"><AppMark />2Listen</span>
       </div>
 
       <nav>
