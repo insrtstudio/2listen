@@ -318,6 +318,7 @@ final class Player: ObservableObject {
             // même pochette générée que dans l'app
             let renderer = ImageRenderer(content: GeneratedCover(seed: track.coverSeed).frame(width: 600, height: 600))
             renderer.scale = 1
+            renderer.isOpaque = true
             if let image = renderer.uiImage {
                 artwork = MPMediaItemArtwork(boundsSize: image.size) { _ in image }
                 publishNowPlaying()

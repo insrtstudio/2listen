@@ -15,7 +15,7 @@ Architecture :
 Pièges connus :
 - `window.prompt` n'existe pas dans Electron — toujours des inputs inline.
 - `music-metadata` et `electron-updater` sont bundlés dans le main (exclude de `externalizeDepsPlugin`) car `node_modules` n'est pas packagé ; tsconfig.node.json a `customConditions: ["node"]` pour les types de music-metadata.
-- Interfaces audio pro >32 canaux : Chromium ne peut pas ouvrir la sortie → détection de stall dans le player + bannière. `ChromeWideEchoCancellation` désactivé dans le main.
+- Interfaces audio pro >32 canaux : Chromium ne peut pas ouvrir la sortie → détection de stall dans le player + bannière (10 s de position figée avec données prêtes : ni chargement, ni saut, ni réveil de l’interface ne la déclenchent). `ChromeWideEchoCancellation` désactivé dans le main.
 - `TL_E2E` lance l'app invisible, sans focus ni son (`scripts/e2e.js` passe même pendant une session de travail) ; capturer avec `webContents.capturePage`, jamais `screencapture` (il prend ce qui est devant à l'écran). La vibrancy n'apparaît pas dans ces captures.
 - Debug : `TL_CLIP_OUT=/x.mp4` exporte le clip streamer sans dialogue (tests e2e). `TL_SHOT=/x.png TL_SHOT_DELAY=6000 TL_AUTOPLAY=1 npx electron .` capture l'écran puis quitte (userData dev = `~/Library/Application Support/2Listen`).
 

@@ -16,6 +16,10 @@ export interface PlayerSnapshot {
 
 type Sub = () => void
 
+const STALL_TICK_MS = 500
+/** 10 s sans progression : une interface pro met plusieurs secondes à se réveiller. */
+const STALL_TICKS = 20
+
 /**
  * Moteur de lecture hors React : deux éléments <audio> qui alternent, le
  * suivant est préchargé pendant la lecture pour un enchaînement sans blanc.
@@ -36,7 +40,7 @@ class Player {
   stalled = false
   /** Atténuation A/B (alignement de loudness) : multiplicateur ≤ 1. */
   private gainMult = 1
-  private stallTimer: ReturnType<typeof setTimeout> | null = null
+  private stallTimer: ReturnType<typeof setInterval> | null = null
   repeat: 'off' | 'all' | 'one' = 'off'
   shuffle = false
   volume = 0.85
@@ -78,25 +82,42 @@ class Player {
     this.watchStall()
   }
 
-  /** 3 s après un play, si currentTime est resté à ~0, la sortie est bloquée. */
+  /**
+   * Surveille la lecture : la sortie n'est déclarée bloquée que si les données
+   * sont prêtes et que la position reste figée pendant STALL_TICKS. Un fichier
+   * en chargement, un saut dans le morceau ou une interface qui se réveille
+   * ne comptent pas.
+   */
   private watchStall(): void {
-    if (this.stallTimer) clearTimeout(this.stallTimer)
+    if (this.stallTimer) clearInterval(this.stallTimer)
+    this.stallTimer = null
     if (!this.playing) {
-      if (this.stalled) {
-        this.stalled = false
-        this.emit()
-      }
+      this.setStalled(false)
       return
     }
-    const at = this.active.currentTime
-    this.stallTimer = setTimeout(() => {
-      const nowStalled = this.playing && this.active.currentTime - at < 0.05
-      if (nowStalled !== this.stalled) {
-        this.stalled = nowStalled
-        this.emit()
+    let last = this.active.currentTime
+    let stuck = 0
+    this.stallTimer = setInterval(() => {
+      if (!this.playing) {
+        this.watchStall()
+        return
       }
-      if (nowStalled) this.watchStall() // re-teste : l'appareil peut se réveiller
-    }, 3000)
+      const el = this.active
+      const t = el.currentTime
+      if (t !== last || el.seeking || el.readyState < el.HAVE_FUTURE_DATA) {
+        last = t
+        stuck = 0
+        this.setStalled(false)
+      } else if (++stuck >= STALL_TICKS) {
+        this.setStalled(true)
+      }
+    }, STALL_TICK_MS)
+  }
+
+  private setStalled(v: boolean): void {
+    if (this.stalled === v) return
+    this.stalled = v
+    this.emit()
   }
 
   private buildSnapshot(): PlayerSnapshot {
@@ -312,6 +333,7 @@ export const player = new Player()
   const a = (player as unknown as { active: HTMLAudioElement }).active
   return {
     playing: player.playing,
+    stalled: player.stalled,
     track: player.track?.title ?? null,
     t: player.currentTime(),
     ready: a.readyState,
